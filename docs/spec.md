@@ -1,0 +1,261 @@
+# 業務フロー図インポートツール 仕様書 v0.2
+
+## 1. 概要
+
+社内の少人数チームで利用する、既存のExcel業務フロー図(オートシェイプ+矢印で作成されたもの)を解析し、構造化データ(JSON)として抽出するツール。
+
+- 対象ユーザー: 社内の少人数チーム
+- 主目的: 既存Excelフロー図の構造化データ化(可視化・共有ドキュメントとしての活用が最終目的)
+- 開発言語: C# / .NET 10
+- 実行環境: Windows想定(Excelアプリケーション自体は不要。OpenXML SDKによる直接解析)
+
+---
+
+## 2. スコープ
+
+### 2.1 対象(v1)
+- .xlsxファイルの直接解析(DocumentFormat.OpenXml 3.5.1、Excelアプリケーション不要)
+- シート内の図形(オートシェイプ)・矢印(コネクタ)を抽出
+- ノード・エッジの構造化データ(JSON)への変換
+- CLIによるインポート結果の確認
+
+### 2.2 対象外(v1、将来検討)
+- GUI上でのフロー図の可視化・編集機能(v2以降)
+- 複数人でのリアルタイム共同編集
+- クラウド保存(対応しない方針)
+- 他システム連携
+- SmartArtやセル罫線ベースのフロー図の解析(オートシェイプ+矢印形式のみ対応)
+
+### 2.3 将来的な方向性(参考)
+- 現時点(v1)ではノードの位置情報(行・列/座標)をデータとして保持する方針
+- 将来的には自動レイアウト算出への移行を検討
+- 将来的な出力先: draw.io形式やExcel形式への出力を想定
+
+---
+
+## 3. プロジェクト構成
+
+```
+FlowChartImporter/
+├── FlowChartImporter.sln
+├── FlowChartImporter.Core/          # クラスライブラリ
+│   ├── Models/
+│   │   ├── FlowChart.cs             # ルートモデル
+│   │   ├── FlowNode.cs              # ノードモデル
+│   │   ├── FlowEdge.cs              # エッジモデル
+│   │   ├── Position.cs              # 座標モデル
+│   │   ├── ShapeType.cs             # シェイプタイプ列挙型
+│   │   └── ImportResult.cs          # インポート結果(FlowChart + 警告リスト)
+│   ├── Settings/
+│   │   ├── ImportSettings.cs        # 設定モデル
+│   │   └── ImportSettingsLoader.cs  # JSON設定ファイルローダー
+│   └── Importing/
+│       ├── NodeNumbering/
+│       │   ├── INodeNumberingStrategy.cs       # 採番インターフェース
+│       │   ├── DefaultNodeNumberingStrategy.cs # デフォルト採番実装
+│       │   └── NodeNumberingStrategyFactory.cs # ファクトリ
+│       ├── Internal/
+│       │   ├── ShapeInfo.cs         # 抽出済みシェイプの内部DTO
+│       │   └── ConnectorInfo.cs     # 抽出済みコネクタの内部DTO
+│       ├── SheetDimensionMap.cs     # 列幅・行高さ→座標変換
+│       ├── ExcelShapeExtractor.cs   # OpenXMLからシェイプ・コネクタを抽出
+│       ├── DepartmentDetector.cs    # A列結合セルから部署範囲を検出
+│       ├── DocumentShapeAssociator.cs # 書類シェイプを親ノードに紐づけ
+│       ├── ConnectorResolver.cs     # コネクタをノードIDペアに解決
+│       ├── FlowChartValidator.cs    # インポート後の検証
+│       └── ExcelImportService.cs   # インポート処理の統括
+└── FlowChartImporter.Cli/           # CLIエントリポイント(C#)
+    └── Program.cs
+```
+
+---
+
+## 4. 機能要件
+
+### 4.1 インポート機能
+- .xlsxファイルを指定してシート内の図形情報を読み込む
+- 対応図形: オートシェイプ(四角形、ひし形等)、矢印/コネクタ
+- 複数シート・複数ファイルの一括処理は対象外(v1は1ファイル・1シートのみ)
+
+### 4.2 データ抽出項目
+
+**ノード(図形)**
+- テキスト(図形内の文字列)
+- 位置(シート上のアンカー行・列(1始まり)、およびポイント単位のx/y座標)
+- 種類(シェイプタイプ: 下記4.3参照)
+- 担当部署: A列の結合セルの行範囲とノードの中心アンカー行で判定
+- 表示番号(Number): 採番ロジックによる整数。GUIDとは別に保持
+- ID: GUID文字列
+
+**エッジ(矢印・コネクタ)**
+- 接続元ノードID(from)
+- 接続先ノードID(to)
+- 連番ID(edge1, edge2, ...)
+
+**添付ファイル情報(書類図形)**
+- 親ノードのバウンディングボックスに重なる書類シェイプを検出
+- 親ノード中心より左側: `inputFiles`(入力ファイル)
+- 親ノード中心より右側: `outputFiles`(出力ファイル)
+- 書類図形内のテキストをファイル名として取得
+
+#### 4.2.1 担当部署の判定ルール
+1. A列(1列目固定)の結合セルを走査し「部署名 → 行範囲(0始まり)」の対応表を作る
+2. 非結合セルの場合も、A列に値があればその行のみを対象とした単行範囲として扱う
+3. 各ノードの中心アンカー行(`(anchorFromRow + anchorToRow) / 2`)が含まれる部署範囲を判定
+4. 境界値は下側の部署に割り当てる
+
+#### 4.2.2 コネクタ(矢印)の接続判定
+- **優先**: `xdr:cxnSp`要素の`stCxn`/`endCxn`による明示的なXML接続情報
+- **フォールバック**: コネクタの始点・終点座標とノードのバウンディングボックスの近接判定
+- 許容誤差は設定ファイルの`connectionTolerancePoints`(ポイント単位)で指定
+
+> **実装メモ**: サンプルファイルでは`xdr:cxnSp`(明示コネクタ)は使用されておらず、`prst="line"`の通常シェイプが矢印として使われていた。このため`prst="line"`のシェイプはコネクタとして扱い、座標近接判定でノードに接続する。
+
+### 4.3 対応シェイプタイプ
+
+| ShapeType | 対応するprst値 | 用途 |
+|-----------|---------------|------|
+| `rectangle` | `rect`, `roundRect`, `flowChartProcess`, `flowChartAlternateProcess` | 業務ステップ |
+| `diamond` | `flowChartDecision` | 分岐 |
+| `ellipse` | `ellipse` | 開始・終了 |
+| `document` | `flowChartDocument`, `foldedCorner` | 書類シェイプ |
+| `parallelogram` | `parallelogram` | 入出力 |
+| `line` | `line`, `straightConnector1` | 矢印(コネクタとして処理) |
+| `unknown` | (preset未指定) | 不明 |
+| `other` | 上記以外すべて | その他 |
+
+### 4.4 出力データ形式(JSON)
+
+```json
+{
+  "schemaVersion": "1.0",
+  "sheetName": "業務フローA",
+  "nodes": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "number": 1,
+      "text": "受注登録",
+      "shapeType": "rectangle",
+      "department": "営業部",
+      "position": { "row": 2, "column": 3, "x": 120.5, "y": 80.0 },
+      "inputFiles": ["注文書.xlsx"],
+      "outputFiles": ["受注データ.csv"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge1",
+      "from": "550e8400-e29b-41d4-a716-446655440000",
+      "to": "661f9511-f30c-52e5-b827-557766551111"
+    }
+  ]
+}
+```
+
+- `schemaVersion`: 現在は `"1.0"` 固定
+- 座標(`x`, `y`)はポイント単位(1pt = 12700 EMU)。`a:xfrm/a:off`の値を変換
+- プロパティ名はすべてcamelCase
+- `shapeType`は文字列(camelCase)でシリアライズ
+
+### 4.5 採番ルール
+
+**デフォルト戦略 (`default`)**
+- X座標昇順(左→右)で採番し、X座標が同じ場合はY座標昇順(上→下)
+- Position未設定のノードは末尾に採番
+
+採番ロジックは`INodeNumberingStrategy`インターフェースで差し替え可能。
+
+---
+
+## 5. 検証機能
+
+インポート処理完了後に自動実行される。結果は標準エラー出力に`[警告]`プレフィックスで出力される。
+
+### 5.1 重複エッジ検出 `[重複エッジ]`
+- 同一の(from, to)ノードペアを持つエッジが2本以上ある場合に警告
+- 例: `[重複エッジ] No.1 '開始' → No.3 '受注登録' の矢印が 2 本あります。`
+
+### 5.2 孤立ノード検出 `[孤立ノード]`
+- 入力・出力のエッジが1本もないノードを検出
+- 例: `[孤立ノード] No.5 '未接続図形' (部署: 営業部, タイプ: Rectangle) は矢印が1本も接続されていません。`
+
+### 5.3 ルート完全性チェック `[途中終了]` `[未到達]`
+- 設定ファイルで`routeCheckStartShapeType`と`routeCheckEndShapeType`を指定した場合のみ実行
+- 開始ノードからBFS探索し、終了ノードに到達できない行き止まりノードを検出
+- 開始ノードから終了ノードへ到達できるルートが1つもない場合も警告
+- 例:
+  ```
+  [途中終了] No.9 'バックアップDB' (部署: , タイプ: Other) に後続の矢印がなく、終了ノードに到達できません。 (開始: No.1 '開始' ...)
+  [未到達] 開始ノード No.1 '開始' から終了ノードに到達できるルートがありません。
+  ```
+
+---
+
+## 6. 設定ファイル
+
+実行ファイルと同じフォルダの`settings.json`を自動読み込み。`--settings`オプションで上書き可能。ファイルが存在しない場合はデフォルト値で動作。
+
+```json
+{
+  "connectionTolerancePoints": 10.0,
+  "nodeNumberingStrategy": "default",
+  "routeCheckStartShapeType": "ellipse",
+  "routeCheckEndShapeType": "ellipse"
+}
+```
+
+| プロパティ | 型 | デフォルト | 説明 |
+|-----------|-----|-----------|------|
+| `connectionTolerancePoints` | number | `10.0` | コネクタ近接判定の許容誤差(ポイント) |
+| `nodeNumberingStrategy` | string | `"default"` | 採番戦略名 |
+| `routeCheckStartShapeType` | string? | `null` | ルートチェックの開始シェイプタイプ。nullでチェック無効 |
+| `routeCheckEndShapeType` | string? | `null` | ルートチェックの終了シェイプタイプ。nullでチェック無効 |
+
+---
+
+## 7. CLI仕様
+
+```
+使用方法:
+  FlowChartImporter <Excelファイル> <シート名> [オプション]
+
+引数:
+  <Excelファイル>   解析する .xlsx ファイルのパス
+  <シート名>        処理対象のシート名
+
+オプション:
+  --settings <パス>  設定ファイルのパス
+  --output <パス>    JSON出力先ファイルのパス(省略時: 標準出力)
+  --list-sheets      指定ファイルのシート一覧を表示して終了
+  --help             ヘルプを表示して終了
+```
+
+- JSONは標準出力、警告・エラー・サマリーは標準エラーに出力
+- `--output`指定時は出力ディレクトリが存在しなくても自動作成
+- シート名が見つからない場合、利用可能なシート一覧を自動表示
+
+---
+
+## 8. 非機能要件
+
+- エラーハンドリング: 未対応形式の図形(SmartArt等)が含まれる場合はスキップして処理を継続し、警告ログに残す
+- パフォーマンス: 想定ファイルサイズ・図形数の上限(未定)
+- テスト: 実際の社内Excelフロー図サンプルでの動作確認方式
+
+---
+
+## 9. 未確定事項
+
+1. 左端列(A列)の部署名: 結合セルなし・非結合の場合の部署名表現方法の確認
+2. 書類図形とノードの重なり判定の具体的な閾値
+3. 同じ位置で重なった書類図形同士の個別検出方法
+4. 「DB」エリアが左端列の結合セル(部署名の一部)として表現されているか、別の見分け方があるか
+
+> **サンプルで判明した実装メモ**:
+> - コネクタは`xdr:cxnSp`ではなく`prst="line"`の通常シェイプとして格納されているケースがある
+> - 書類シェイプは`prst="foldedCorner"`が使われていた(`flowChartDocument`だけでは不足)
+> - テキストは`xdr:txBody`(Drawing.Spreadsheet.TextBody)に格納されている
+
+---
+
+*本ドキュメントはv0.2。v1実装完了後に正式版へ更新予定。*
