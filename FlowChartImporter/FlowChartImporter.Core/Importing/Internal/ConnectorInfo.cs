@@ -13,4 +13,7 @@ internal class ConnectorInfo
     public double StartY { get; init; }
     public double EndX { get; init; }
     public double EndY { get; init; }
+
+    // コネクタ(矢印)自体に書かれたテキスト(分岐の "Y"/"N" 等)
+    public string? Label { get; init; }
 }

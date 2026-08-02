@@ -53,6 +53,7 @@ public class ExcelImportService
                 StartY = startY,
                 EndX = endX,
                 EndY = endY,
+                Label = string.IsNullOrWhiteSpace(line.Text) ? null : line.Text.Trim(),
             });
         }
 
@@ -96,8 +97,8 @@ public class ExcelImportService
         var connections = resolver.Resolve(connectors, nodeShapes, xmlIdToNodeId);
 
         int edgeSeq = 1;
-        foreach (var (fromId, toId) in connections)
-            chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId));
+        foreach (var (fromId, toId, label) in connections)
+            chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
 
         // 6. ノード番号を採番
         _numberingStrategy.AssignNumbers(chart.Nodes);

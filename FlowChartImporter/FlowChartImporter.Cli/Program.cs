@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using FlowChartImporter.Core.Exporting;
 using FlowChartImporter.Core.Importing;
 using FlowChartImporter.Core.Settings;
 
@@ -18,13 +20,16 @@ const string UsageText = """
                          (省略時: 実行ファイルと同じフォルダの settings.json)
       --output <パス>    JSON 出力先ファイルのパス
                          (省略時: 標準出力)
+      --csv <パス>       フロー内容を要約したCSVファイルの出力先パス
+                         (省略時: CSV出力なし)
       --list-sheets      指定ファイルのシート一覧を表示して終了
       --help             このヘルプを表示して終了
 
     設定ファイル (settings.json) の形式:
       {
         "connectionTolerancePoints": 10.0,
-        "nodeNumberingStrategy": "default"
+        "nodeNumberingStrategy": "default",
+        "nodeNumberFormat": "A-{no}"
       }
     """;
 
@@ -39,6 +44,7 @@ string? filePath = null;
 string? sheetName = null;
 string? settingsPath = null;
 string? outputPath = null;
+string? csvPath = null;
 bool listSheets = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -50,6 +56,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--output" when i + 1 < args.Length:
             outputPath = args[++i];
+            break;
+        case "--csv" when i + 1 < args.Length:
+            csvPath = args[++i];
             break;
         case "--list-sheets":
             listSheets = true;
@@ -133,6 +142,18 @@ try
     else
     {
         Console.WriteLine(json);
+    }
+
+    // CSV 出力(フロー内容の要約)
+    if (csvPath != null)
+    {
+        var csvDir = Path.GetDirectoryName(csvPath);
+        if (!string.IsNullOrEmpty(csvDir))
+            Directory.CreateDirectory(csvDir);
+
+        var csv = new FlowChartCsvExporter().Export(result.FlowChart, settings);
+        File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        Console.Error.WriteLine($"CSV出力完了: {csvPath}");
     }
 
     return 0;

@@ -21,4 +21,10 @@ public class ImportSettings
     /// 例: "ellipse"
     /// </summary>
     public string? RouteCheckEndShapeType { get; set; }
+
+    /// <summary>
+    /// CSV出力等で使う処理名の表示フォーマット。"{no}" が採番された番号(Number)に置換される。
+    /// 例: "A-{no}" → "A-10"
+    /// </summary>
+    public string NodeNumberFormat { get; set; } = "{no}";
 }
