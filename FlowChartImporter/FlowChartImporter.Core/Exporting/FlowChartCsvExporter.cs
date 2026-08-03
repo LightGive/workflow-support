@@ -7,8 +7,11 @@ namespace FlowChartImporter.Core.Exporting;
 /// <summary>
 /// インポート結果のフロー内容をCSVに要約する。
 /// 1列目: 処理名(採番フォーマット適用)
-/// 2列目: フローの種類(開始/終了/分岐/処理)
-/// 3列目: 開始からそのフローまでに必ず通過し、かつ通過方向が一意に定まる分岐の一覧
+/// 2列目: フローの種類(開始/終了/分岐/処理/呼び出し)
+/// 3列目: 開始からそのフローまでに必ず通過し、かつ通過方向が一意に定まる分岐のYES/NO一覧
+/// 4列目: 担当部署
+/// 5列目: 内容(図形内テキスト)
+/// 6列目: 備考(入力/出力ファイル、近くのテキストボックスの内容)
 /// </summary>
 public class FlowChartCsvExporter
 {
@@ -30,7 +33,7 @@ public class FlowChartCsvExporter
 
         var categories = chart.Nodes.ToDictionary(
             n => n.Id,
-            n => ClassifyCategory(n, inDegree[n.Id], outgoing[n.Id].Count));
+            n => ClassifyCategory(n, inDegree[n.Id], outgoing[n.Id].Count, settings));
 
         var displayNames = chart.Nodes.ToDictionary(
             n => n.Id,
@@ -41,7 +44,7 @@ public class FlowChartCsvExporter
             n => n.Id,
             n => outgoing[n.Id].Select(e => e.ToNodeId).ToList());
         successors[VirtualRootId] = chart.Nodes
-            .Where(n => categories[n.Id] == "開始")
+            .Where(n => categories[n.Id] == settings.CategoryNameStart)
             .Select(n => n.Id)
             .ToList();
 
@@ -49,7 +52,7 @@ public class FlowChartCsvExporter
         var reachable = chart.Nodes.ToDictionary(n => n.Id, n => BfsReachable(n.Id, successors));
 
         var sb = new StringBuilder();
-        sb.Append("処理名,種類,分岐ルート,部署,テキスト\r\n");
+        sb.Append("処理名,種類,分岐ルート,部署,内容,備考\r\n");
 
         foreach (var node in chart.Nodes.OrderBy(n => n.Number))
         {
@@ -58,26 +61,42 @@ public class FlowChartCsvExporter
               .Append(CsvField(categories[node.Id])).Append(',')
               .Append(CsvField(route)).Append(',')
               .Append(CsvField(node.Department)).Append(',')
-              .Append(CsvField(node.Text)).Append("\r\n");
+              .Append(CsvField(node.Text)).Append(',')
+              .Append(CsvField(BuildRemarks(node))).Append("\r\n");
         }
 
         return sb.ToString();
     }
 
     // ── 種類判定 ─────────────────────────────────────────────────
-    private static string ClassifyCategory(FlowNode node, int inDegree, int outDegree)
+    private static string ClassifyCategory(FlowNode node, int inDegree, int outDegree, ImportSettings settings)
     {
-        if (node.ShapeType == ShapeType.Diamond) return "分岐";
+        if (node.ShapeType == ShapeType.Diamond) return settings.CategoryNameBranch;
         if (node.ShapeType == ShapeType.Ellipse)
         {
-            if (inDegree == 0) return "開始";
-            if (outDegree == 0) return "終了";
+            if (inDegree == 0) return settings.CategoryNameStart;
+            if (outDegree == 0) return settings.CategoryNameEnd;
+            return settings.CategoryNameCall; // 開始・終了のどちらでもない楕円 = 他フローの呼び出し
         }
-        return "処理";
+        return settings.CategoryNameProcess;
     }
 
     private static string FormatDisplayName(string format, int number) =>
         string.IsNullOrEmpty(format) ? number.ToString() : format.Replace("{no}", number.ToString());
+
+    // ── 備考 ─────────────────────────────────────────────────────
+    private static string BuildRemarks(FlowNode node)
+    {
+        var lines = new List<string>();
+        if (node.InputFiles.Count > 0)
+            lines.Add("入力: " + string.Join(", ", node.InputFiles));
+        if (node.OutputFiles.Count > 0)
+            lines.Add("出力: " + string.Join(", ", node.OutputFiles));
+        foreach (var remark in node.Remarks)
+            lines.Add("メモ: " + remark);
+
+        return string.Join("\n", lines);
+    }
 
     // ── 分岐ルート判定 ───────────────────────────────────────────
     // 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、

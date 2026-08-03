@@ -105,7 +105,10 @@ if (sheetName == null)
 
 // ── 設定ファイル読み込み ──────────────────────────────────────
 settingsPath ??= Path.Combine(AppContext.BaseDirectory, "settings.json");
+var settingsExisted = File.Exists(settingsPath);
 var settings = ImportSettingsLoader.Load(settingsPath);
+if (!settingsExisted)
+    Console.Error.WriteLine($"設定ファイルが見つからなかったため、デフォルト値で新規作成しました: {settingsPath}");
 
 // ── インポート実行 ────────────────────────────────────────────
 try

@@ -16,4 +16,7 @@ internal class ConnectorInfo
 
     // コネクタ(矢印)自体に書かれたテキスト(分岐の "Y"/"N" 等)
     public string? Label { get; init; }
+
+    // 「カギ型接続線」(bentConnector2〜5)かどうか
+    public bool IsElbow { get; init; }
 }

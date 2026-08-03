@@ -36,9 +36,20 @@ public class ExcelImportService
 
         // Line シェイプはコネクタとして扱い、ノードには含めない
         var lineShapes = shapes.Where(s => s.ShapeType == ShapeType.Line).ToList();
-        var nodeShapes = shapes.Where(s => s.ShapeType != ShapeType.Document
-                                        && s.ShapeType != ShapeType.Line).ToList();
         var documentShapes = shapes.Where(s => s.ShapeType == ShapeType.Document).ToList();
+
+        // テキストボックス(Excelの「テキストボックス」挿入機能で作られた図形)はノードには含めない。
+        // YES/NOテキストは分岐のラベル判定に、それ以外は近くのノードの備考として使う。
+        var yesNoTextBoxes = shapes
+            .Where(s => s.IsTextBox && BranchLabelResolver.MatchYesNo(s.Text) != null)
+            .ToList();
+        var remarkTextBoxes = shapes
+            .Where(s => s.IsTextBox && BranchLabelResolver.MatchYesNo(s.Text) == null)
+            .ToList();
+
+        var nodeShapes = shapes.Where(s => s.ShapeType != ShapeType.Document
+                                        && s.ShapeType != ShapeType.Line
+                                        && !s.IsTextBox).ToList();
 
         // Line シェイプを ConnectorInfo に変換してコネクタリストに追加
         foreach (var line in lineShapes)
@@ -54,6 +65,7 @@ public class ExcelImportService
                 EndX = endX,
                 EndY = endY,
                 Label = string.IsNullOrWhiteSpace(line.Text) ? null : line.Text.Trim(),
+                IsElbow = line.IsElbowConnector,
             });
         }
 
@@ -92,12 +104,21 @@ public class ExcelImportService
         var associator = new DocumentShapeAssociator();
         associator.Associate(documentShapes, nodeMap);
 
+        // 4b. YES/NO以外のテキストボックスを最も近いノードの備考として紐づけ
+        var remarkAssociator = new RemarkAssociator();
+        remarkAssociator.Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
+
         // 5. コネクタをエッジに変換
         var resolver = new ConnectorResolver(_settings.ConnectionTolerancePoints);
         var connections = resolver.Resolve(connectors, nodeShapes, xmlIdToNodeId);
 
+        // 矢印自体にテキストが無い分岐について、近くのYES/NOテキストボックスからラベルを補う
+        var nodeShapeById = nodeMap.ToDictionary(t => t.Node.Id, t => t.Shape);
+        BranchLabelResolver.ResolveMissingLabels(
+            connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints);
+
         int edgeSeq = 1;
-        foreach (var (fromId, toId, label) in connections)
+        foreach (var (fromId, toId, label, _, _, _, _, _) in connections)
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
 
         // 6. ノード番号を採番

@@ -109,8 +109,11 @@ internal class ExcelShapeExtractor
         }
 
         var prstGeom = sp.ShapeProperties?.GetFirstChild<PresetGeometry>();
-        var shapeType = MapPreset(prstGeom?.Preset?.InnerText);
+        var preset = prstGeom?.Preset?.InnerText;
+        var shapeType = MapPreset(preset);
         var text = ExtractText(sp);
+        var isTextBox = sp.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value ?? false;
+        var isElbowConnector = preset is "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5";
 
         return new ShapeInfo
         {
@@ -128,6 +131,8 @@ internal class ExcelShapeExtractor
             AnchorFromCol = fromCol,
             AnchorToRow = toRow,
             AnchorToCol = toCol,
+            IsTextBox = isTextBox,
+            IsElbowConnector = isElbowConnector,
         };
     }
 
@@ -187,7 +192,9 @@ internal class ExcelShapeExtractor
         "ellipse" => Models.ShapeType.Ellipse,
         "flowChartDocument" or "foldedCorner" => Models.ShapeType.Document,
         "parallelogram" => Models.ShapeType.Parallelogram,
-        "line" or "straightConnector1" => Models.ShapeType.Line,
+        "line" or "straightConnector1"
+            or "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5"
+            => Models.ShapeType.Line,
         null or "" => Models.ShapeType.Unknown,
         _ => Models.ShapeType.Other,
     };

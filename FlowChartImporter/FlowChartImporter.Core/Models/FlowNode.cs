@@ -22,6 +22,9 @@ public class FlowNode
     /// <summary>図形の右下に重なる書類シェイプのテキスト(出力ファイル)</summary>
     public List<string> OutputFiles { get; set; }
 
+    /// <summary>近くにあるテキストボックス(YES/NO判定用を除く)の内容</summary>
+    public List<string> Remarks { get; set; }
+
     public FlowNode(string id)
     {
         Id = id;
@@ -29,5 +32,6 @@ public class FlowNode
         Department = string.Empty;
         InputFiles = [];
         OutputFiles = [];
+        Remarks = [];
     }
 }

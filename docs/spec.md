@@ -112,6 +112,20 @@ FlowChartImporter/
 
 > **実装メモ**: サンプルファイルでは`xdr:cxnSp`(明示コネクタ)は使用されておらず、`prst="line"`の通常シェイプが矢印として使われていた。このため`prst="line"`のシェイプはコネクタとして扱い、座標近接判定でノードに接続する。
 
+#### 4.2.3 分岐(ひし形)のYES/NO判定
+
+分岐から出る矢印のラベル(`FlowEdge.Label`)は、以下の優先順位で判定する。
+
+1. **矢印(線シェイプ)自体に書かれたテキスト**があればそれをそのまま使う(4.2.2参照)
+2. 矢印にテキストが無い場合、**分岐ノードの近くにあるYES/NOテキストボックス**から判定する:
+   - OOXML上で`txBox="1"`(Excelの「テキストボックス」挿入機能で作成された図形)かつテキストが`YES`または`NO`(大文字・小文字を区別しない)の図形を候補とする
+   - 分岐ノードの中心から`branchLabelSearchRadiusPoints`(設定値)以内にあるものを対象とする
+   - 分岐の中心→テキストボックスの中心への方向ベクトルと、分岐から出る各矢印の方向ベクトルとの角度を比較し、最も角度が小さい矢印にラベルを割り当てる
+     - 直線: 分岐の中心から見て遠い方の端点への向きを矢印の方向とする
+     - カギ型接続線(`bentConnector2`〜`5`、直角に曲がる矢印): 遠い方の端点ではなく、分岐に近い方の端点(=矢印が最初に出た位置)が分岐のどの辺(上下左右)に接しているかを判定し、その辺の外向き方向(上下左右いずれか)を「最初に出た方向」として使う。横に出てから後ろに戻るような経路でも、最初に出た方向を正しく判定できる
+   - 割り当てるラベルは`YES`→`"Y"`、`NO`→`"N"`に正規化する
+   - この判定に使ったテキストボックスはFlowNodeには含めない(あくまで矢印のラベル用)
+
 ### 4.3 対応シェイプタイプ
 
 | ShapeType | 対応するprst値 | 用途 |
@@ -121,7 +135,7 @@ FlowChartImporter/
 | `ellipse` | `ellipse` | 開始・終了 |
 | `document` | `flowChartDocument`, `foldedCorner` | 書類シェイプ |
 | `parallelogram` | `parallelogram` | 入出力 |
-| `line` | `line`, `straightConnector1` | 矢印(コネクタとして処理) |
+| `line` | `line`, `straightConnector1`, `bentConnector2`〜`5` | 矢印(コネクタとして処理)。`bentConnector`系はカギ型接続線 |
 | `unknown` | (preset未指定) | 不明 |
 | `other` | 上記以外すべて | その他 |
 
@@ -173,15 +187,19 @@ FlowChartImporter/
 | 列 | 内容 |
 |----|------|
 | 1列目 処理名 | `nodeNumberFormat`設定を適用した表示用処理名(例: `A-10`) |
-| 2列目 種類 | `開始` / `終了` / `分岐` / `処理` のいずれか(4.6.1参照) |
-| 3列目 分岐ルート | 開始からそのノードに至るまでに必ず通過し、かつ通過方向が一意に定まる分岐(ひし形)の一覧(4.6.2参照) |
+| 2列目 種類 | `開始` / `終了` / `分岐` / `処理` / `呼び出し` のいずれか(4.6.1参照) |
+| 3列目 分岐ルート | 開始からそのノードに至るまでに必ず通過し、かつ通過方向が一意に定まる分岐(ひし形)のYES/NO一覧(4.6.2参照) |
 | 4列目 部署 | 左端列(A列)の結合セルから判定した担当部署(4.2.1参照)。未判定の場合は空欄 |
-| 5列目 テキスト | 図形内に書かれたテキスト |
+| 5列目 内容 | 図形内に書かれたテキスト |
+| 6列目 備考 | 入力/出力ファイル、近くのテキストボックスの内容(4.6.3参照) |
 
 #### 4.6.1 種類の判定ルール
-- `diamond`(ひし形) → `分岐`
-- `ellipse`(楕円)のうち、入ってくる矢印が0本 → `開始`、出ていく矢印が0本 → `終了`
-- 上記以外 → `処理`
+- `diamond`(ひし形) → `分岐`(`categoryNameBranch`)
+- `ellipse`(楕円)のうち、入ってくる矢印が0本 → `開始`(`categoryNameStart`)、出ていく矢印が0本 → `終了`(`categoryNameEnd`)
+- `ellipse`(楕円)のうち、上記以外(入出力どちらも矢印がある) → `呼び出し`(`categoryNameCall`)。他フローの呼び出しを表す楕円を想定
+- 上記以外 → `処理`(`categoryNameProcess`)
+
+各種類の名称は設定ファイルの`categoryNameStart`/`categoryNameEnd`/`categoryNameBranch`/`categoryNameProcess`/`categoryNameCall`で変更可能(6章参照)。
 
 #### 4.6.2 分岐ルートの判定ルール
 - 開始ノードからそのノードに至る**すべての経路が必ず通過する**分岐(ひし形)ノードを支配木(dominator tree)により求める
@@ -190,6 +208,15 @@ FlowChartImporter/
 - 該当する分岐が無い場合は空欄
 - 矢印にラベル(テキスト)が無い場合は`{分岐の処理名}`のみを記載する
 - 複数の分岐を経由する場合は開始に近い順にカンマ区切りで列挙する(例: `A-3Y,A-8N`)
+
+#### 4.6.3 備考の内容
+以下を`ラベル: 内容`の形式で改行区切りで列挙する(該当が無い項目は省略)。
+
+- `入力: {InputFiles をカンマ区切りで結合}`
+- `出力: {OutputFiles をカンマ区切りで結合}`
+- `メモ: {テキストボックスの内容}`(近くのテキストボックス1つにつき1行)
+
+「近くのテキストボックス」は、YES/NO判定に使われなかったテキストボックスのうち、`branchLabelSearchRadiusPoints`(設定値)以内で最も中心が近いノードに割り当てる(4.2.3参照の検索半径設定を流用)。
 
 ---
 
@@ -226,6 +253,7 @@ FlowChartImporter/
   "connectionTolerancePoints": 10.0,
   "nodeNumberingStrategy": "default",
   "nodeNumberFormat": "A-{no}",
+  "branchLabelSearchRadiusPoints": 80.0,
   "routeCheckStartShapeType": "ellipse",
   "routeCheckEndShapeType": "ellipse"
 }
@@ -236,8 +264,16 @@ FlowChartImporter/
 | `connectionTolerancePoints` | number | `10.0` | コネクタ近接判定の許容誤差(ポイント) |
 | `nodeNumberingStrategy` | string | `"default"` | 採番戦略名 |
 | `nodeNumberFormat` | string | `"{no}"` | CSV出力等で使う処理名の表示フォーマット。`{no}`が採番番号に置換される(例: `"A-{no}"` → `"A-10"`) |
+| `branchLabelSearchRadiusPoints` | number | `80.0` | 分岐ノードの近くにあるYES/NOテキストボックスを検索する範囲(ポイント単位)。矢印自体にテキストが無い場合のみ使用(4.2.3参照) |
+| `categoryNameStart` | string | `"開始"` | CSV出力の「種類」列で使う、開始ノードの種類名(4.6.1参照) |
+| `categoryNameEnd` | string | `"終了"` | CSV出力の「種類」列で使う、終了ノードの種類名(4.6.1参照) |
+| `categoryNameBranch` | string | `"分岐"` | CSV出力の「種類」列で使う、分岐(ひし形)ノードの種類名(4.6.1参照) |
+| `categoryNameProcess` | string | `"処理"` | CSV出力の「種類」列で使う、それ以外(通常の処理)ノードの種類名(4.6.1参照) |
+| `categoryNameCall` | string | `"呼び出し"` | CSV出力の「種類」列で使う、呼び出し(開始・終了以外の楕円)ノードの種類名(4.6.1参照) |
 | `routeCheckStartShapeType` | string? | `null` | ルートチェックの開始シェイプタイプ。nullでチェック無効 |
 | `routeCheckEndShapeType` | string? | `null` | ルートチェックの終了シェイプタイプ。nullでチェック無効 |
+
+設定ファイルが存在しない場合は、上記デフォルト値で自動的に新規作成される。
 
 ---
 
