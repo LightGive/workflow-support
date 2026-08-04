@@ -19,7 +19,7 @@ const string UsageText = """
       --settings <パス>  設定ファイルのパス
                          (省略時: 実行ファイルと同じフォルダの settings.json)
       --output <パス>    JSON 出力先ファイルのパス
-                         (省略時: 標準出力)
+                         (省略時: JSON は出力せず、件数のみ表示)
       --csv <パス>       フロー内容を要約したCSVファイルの出力先パス
                          (省略時: CSV出力なし)
       --list-sheets      指定ファイルのシート一覧を表示して終了
@@ -139,13 +139,10 @@ try
 
         File.WriteAllText(outputPath, json);
         Console.Error.WriteLine($"出力完了: {outputPath}");
-        Console.Error.WriteLine($"  ノード数: {result.FlowChart.Nodes.Count}");
-        Console.Error.WriteLine($"  エッジ数: {result.FlowChart.Edges.Count}");
     }
-    else
-    {
-        Console.WriteLine(json);
-    }
+
+    Console.Error.WriteLine($"  ノード数: {result.FlowChart.Nodes.Count}");
+    Console.Error.WriteLine($"  エッジ数: {result.FlowChart.Edges.Count}");
 
     // CSV 出力(フロー内容の要約)
     if (csvPath != null)

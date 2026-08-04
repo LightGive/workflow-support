@@ -114,6 +114,9 @@ internal class ExcelShapeExtractor
         var text = ExtractText(sp);
         var isTextBox = sp.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value ?? false;
         var isElbowConnector = preset is "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5";
+        var outline = sp.ShapeProperties?.GetFirstChild<Outline>();
+        var hasNoLine = outline?.GetFirstChild<NoFill>() != null;
+        var isDashed = IsDashedLine(outline);
 
         return new ShapeInfo
         {
@@ -133,6 +136,8 @@ internal class ExcelShapeExtractor
             AnchorToCol = toCol,
             IsTextBox = isTextBox,
             IsElbowConnector = isElbowConnector,
+            HasNoLine = hasNoLine,
+            IsDashed = isDashed,
         };
     }
 
@@ -157,7 +162,15 @@ internal class ExcelShapeExtractor
             StartY = startY,
             EndX = endX,
             EndY = endY,
+            IsDashed = IsDashedLine(cxnSp.ShapeProperties?.GetFirstChild<Outline>()),
         };
+    }
+
+    // OpenXML 3.x の PresetLineDashValues は定数として扱えないため InnerText で文字列比較する
+    private static bool IsDashedLine(Outline? outline)
+    {
+        var dashVal = outline?.GetFirstChild<PresetDash>()?.Val?.InnerText;
+        return !string.IsNullOrEmpty(dashVal) && dashVal != "solid";
     }
 
     private static string ExtractText(DwgSheet.Shape sp)
@@ -192,6 +205,7 @@ internal class ExcelShapeExtractor
         "ellipse" => Models.ShapeType.Ellipse,
         "flowChartDocument" or "foldedCorner" => Models.ShapeType.Document,
         "parallelogram" => Models.ShapeType.Parallelogram,
+        "leftBracket" or "rightBracket" => Models.ShapeType.Bracket,
         "line" or "straightConnector1"
             or "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5"
             => Models.ShapeType.Line,

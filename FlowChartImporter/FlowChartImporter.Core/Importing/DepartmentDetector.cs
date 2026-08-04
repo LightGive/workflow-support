@@ -75,10 +75,19 @@ internal class DepartmentDetector
         if (cell.DataType?.Value == CellValues.SharedString && sharedStrings != null
             && int.TryParse(cell.CellValue?.Text, out var idx))
         {
-            return sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(idx)?.InnerText
-                   ?? string.Empty;
+            var item = sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(idx);
+            return item != null ? GetSharedStringText(item) : string.Empty;
         }
         return cell.CellValue?.Text ?? string.Empty;
+    }
+
+    // SharedStringItem.InnerText はフリガナ(rPh)内のテキストも含めて連結してしまうため、
+    // 表示テキスト(t / r/t)のみを対象に組み立てる。
+    private static string GetSharedStringText(SharedStringItem item)
+    {
+        var text = string.Concat(item.Elements<Text>().Select(t => t.Text));
+        text += string.Concat(item.Elements<Run>().Select(r => r.Text?.Text ?? string.Empty));
+        return text;
     }
 
     private static bool IsColumnA(string? cellRef)

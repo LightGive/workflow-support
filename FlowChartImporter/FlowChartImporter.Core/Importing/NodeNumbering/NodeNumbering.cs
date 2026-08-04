@@ -2,6 +2,21 @@ using FlowChartImporter.Core.Models;
 
 namespace FlowChartImporter.Core.Importing.NodeNumbering;
 
+public interface INodeNumberingStrategy
+{
+    void AssignNumbers(IList<FlowNode> nodes);
+}
+
+public static class NodeNumberingStrategyFactory
+{
+    public static INodeNumberingStrategy Create(string strategyName) =>
+        strategyName.ToLowerInvariant() switch
+        {
+            "default" or "" => new DefaultNodeNumberingStrategy(),
+            _ => throw new NotSupportedException($"Unknown node numbering strategy: '{strategyName}'"),
+        };
+}
+
 /// <summary>
 /// X座標昇順(左→右)で採番し、同じ列グループ内はY座標昇順(上→下)で採番する。
 /// </summary>

@@ -19,4 +19,8 @@ internal class ConnectorInfo
 
     // 「カギ型接続線」(bentConnector2〜5)かどうか
     public bool IsElbow { get; init; }
+
+    // 線種(a:prstDash)が実線以外(点線・破線など)かどうか。
+    // データのやり取りを表す線であり、フローとしては扱わない。
+    public bool IsDashed { get; init; }
 }

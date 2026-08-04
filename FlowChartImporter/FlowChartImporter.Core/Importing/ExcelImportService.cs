@@ -40,16 +40,26 @@ public class ExcelImportService
 
         // テキストボックス(Excelの「テキストボックス」挿入機能で作られた図形)はノードには含めない。
         // YES/NOテキストは分岐のラベル判定に、それ以外は近くのノードの備考として使う。
+        // 分岐先を示すYES/NOは、テキストボックスの代わりに枠線なしの矩形(Rectangle)で
+        // 作られている場合もあるため、同様に判定対象とする。
+        bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || (s.ShapeType == ShapeType.Rectangle && s.HasNoLine);
+
+        // 「[」(角かっこ)の図形もテキストボックスと同様、ノードではなく
+        // 近くのノードへの備考として扱う。
+        bool IsRemarkCandidate(Internal.ShapeInfo s) => s.IsTextBox || s.ShapeType == ShapeType.Bracket;
+
         var yesNoTextBoxes = shapes
-            .Where(s => s.IsTextBox && BranchLabelResolver.MatchYesNo(s.Text) != null)
+            .Where(s => IsYesNoLabelCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) != null)
             .ToList();
         var remarkTextBoxes = shapes
-            .Where(s => s.IsTextBox && BranchLabelResolver.MatchYesNo(s.Text) == null)
+            .Where(s => IsRemarkCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) == null)
             .ToList();
 
         var nodeShapes = shapes.Where(s => s.ShapeType != ShapeType.Document
                                         && s.ShapeType != ShapeType.Line
-                                        && !s.IsTextBox).ToList();
+                                        && s.ShapeType != ShapeType.Bracket
+                                        && !s.IsTextBox
+                                        && !yesNoTextBoxes.Contains(s)).ToList();
 
         // Line シェイプを ConnectorInfo に変換してコネクタリストに追加
         foreach (var line in lineShapes)
@@ -66,6 +76,7 @@ public class ExcelImportService
                 EndY = endY,
                 Label = string.IsNullOrWhiteSpace(line.Text) ? null : line.Text.Trim(),
                 IsElbow = line.IsElbowConnector,
+                IsDashed = line.IsDashed,
             });
         }
 
@@ -109,8 +120,10 @@ public class ExcelImportService
         remarkAssociator.Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
 
         // 5. コネクタをエッジに変換
+        // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れではないため対象外とする
+        var flowConnectors = connectors.Where(c => !c.IsDashed).ToList();
         var resolver = new ConnectorResolver(_settings.ConnectionTolerancePoints);
-        var connections = resolver.Resolve(connectors, nodeShapes, xmlIdToNodeId);
+        var connections = resolver.Resolve(flowConnectors, nodeShapes, xmlIdToNodeId);
 
         // 矢印自体にテキストが無い分岐について、近くのYES/NOテキストボックスからラベルを補う
         var nodeShapeById = nodeMap.ToDictionary(t => t.Node.Id, t => t.Shape);
