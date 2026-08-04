@@ -64,8 +64,14 @@ for (int i = 0; i < args.Length; i++)
             listSheets = true;
             break;
         default:
-            if (filePath == null) filePath = args[i];
-            else if (sheetName == null) sheetName = args[i];
+            if (filePath == null)
+            {
+                filePath = args[i];
+            }
+            else if (sheetName == null)
+            {
+                sheetName = args[i];
+            }
             else
             {
                 Console.Error.WriteLine($"不明な引数: {args[i]}");
@@ -108,7 +114,9 @@ settingsPath ??= Path.Combine(AppContext.BaseDirectory, "settings.json");
 var settingsExisted = File.Exists(settingsPath);
 var settings = ImportSettingsLoader.Load(settingsPath);
 if (!settingsExisted)
+{
     Console.Error.WriteLine($"設定ファイルが見つからなかったため、デフォルト値で新規作成しました: {settingsPath}");
+}
 
 // ── インポート実行 ────────────────────────────────────────────
 try
@@ -135,7 +143,9 @@ try
     {
         var outputDir = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(outputDir))
+        {
             Directory.CreateDirectory(outputDir);
+        }
 
         File.WriteAllText(outputPath, json);
         Console.Error.WriteLine($"出力完了: {outputPath}");
@@ -149,7 +159,9 @@ try
     {
         var csvDir = Path.GetDirectoryName(csvPath);
         if (!string.IsNullOrEmpty(csvDir))
+        {
             Directory.CreateDirectory(csvDir);
+        }
 
         var csv = new FlowChartCsvExporter().Export(result.FlowChart, settings);
         File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
@@ -164,7 +176,9 @@ catch (InvalidOperationException ex)
 
     // シートが見つからない場合はシート一覧を表示
     if (ex.Message.Contains("シート"))
+    {
         PrintSheetNames(filePath);
+    }
 
     return 1;
 }

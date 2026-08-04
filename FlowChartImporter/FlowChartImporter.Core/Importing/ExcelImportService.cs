@@ -155,8 +155,14 @@ public class ExcelImportService
         double x1 = line.Left, y1 = line.Top;
         double x2 = line.Right, y2 = line.Bottom;
 
-        if (line.FlipH) (x1, x2) = (x2, x1);
-        if (line.FlipV) (y1, y2) = (y2, y1);
+        if (line.FlipH)
+        {
+            (x1, x2) = (x2, x1);
+        }
+        if (line.FlipV)
+        {
+            (y1, y2) = (y2, y1);
+        }
 
         return (x1, y1, x2, y2);
     }
@@ -167,7 +173,10 @@ public class ExcelImportService
             ?.Elements<Sheet>()
             .FirstOrDefault(s => s.Name?.Value == sheetName);
 
-        if (sheet?.Id?.Value == null) return null;
+        if (sheet?.Id?.Value == null)
+        {
+            return null;
+        }
         return workbookPart.GetPartById(sheet.Id.Value) as WorksheetPart;
     }
 }

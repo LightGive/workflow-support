@@ -16,7 +16,10 @@ internal class RemarkAssociator
         foreach (var textBox in remarkTextBoxes)
         {
             var text = textBox.Text.Trim();
-            if (text.Length == 0) continue;
+            if (text.Length == 0)
+            {
+                continue;
+            }
 
             FlowNode? nearestNode = null;
             var bestDist = searchRadiusPoints;

@@ -30,7 +30,9 @@ public static class ImportSettingsLoader
 
             var dir = Path.GetDirectoryName(filePath);
             if (!string.IsNullOrEmpty(dir))
+            {
                 Directory.CreateDirectory(dir);
+            }
 
             File.WriteAllText(filePath, JsonSerializer.Serialize(defaults, WriteOptions));
             return defaults;

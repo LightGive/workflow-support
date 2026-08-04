@@ -16,16 +16,23 @@ internal class DocumentShapeAssociator
         {
             // バウンディングボックスが重なるノードを探す
             var parent = nodeMap.FirstOrDefault(m => Overlaps(doc, m.Shape));
-            if (parent.Node == null) continue;
+            if (parent.Node == null)
+            {
+                continue;
+            }
 
             // 親ノードの中心より左→入力、右→出力
             bool isLeft = doc.CenterX < parent.Shape.CenterX;
             var text = doc.Text;
 
             if (isLeft)
+            {
                 parent.Node.InputFiles.Add(text);
+            }
             else
+            {
                 parent.Node.OutputFiles.Add(text);
+            }
         }
     }
 

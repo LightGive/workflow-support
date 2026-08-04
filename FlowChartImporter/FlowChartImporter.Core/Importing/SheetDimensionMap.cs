@@ -28,7 +28,10 @@ internal class SheetDimensionMap
     {
         foreach (var col in worksheet.GetFirstChild<Columns>()?.Elements<Column>() ?? [])
         {
-            if (col.Width == null) continue;
+            if (col.Width == null)
+            {
+                continue;
+            }
             double widthPt = CharacterWidthToPt(col.Width.Value);
             int min = (int)(col.Min?.Value ?? 1) - 1; // 0-based
             int max = (int)(col.Max?.Value ?? col.Min?.Value ?? 1) - 1;
@@ -41,14 +44,20 @@ internal class SheetDimensionMap
     {
         foreach (var row in worksheet.GetFirstChild<SheetData>()?.Elements<Row>() ?? [])
         {
-            if (row.RowIndex == null || row.Height == null) continue;
+            if (row.RowIndex == null || row.Height == null)
+            {
+                continue;
+            }
             _rowHeights[(int)row.RowIndex.Value - 1] = row.Height.Value; // 0-based, already in pt
         }
     }
 
     public double GetColumnLeft(int colIndex)
     {
-        if (_colLeftCache.TryGetValue(colIndex, out var cached)) return cached;
+        if (_colLeftCache.TryGetValue(colIndex, out var cached))
+        {
+            return cached;
+        }
         double x = 0;
         for (int i = 0; i < colIndex; i++)
             x += _colWidths.TryGetValue(i, out var w) ? w : DefaultColumnWidthPt;
@@ -58,7 +67,10 @@ internal class SheetDimensionMap
 
     public double GetRowTop(int rowIndex)
     {
-        if (_rowTopCache.TryGetValue(rowIndex, out var cached)) return cached;
+        if (_rowTopCache.TryGetValue(rowIndex, out var cached))
+        {
+            return cached;
+        }
         double y = 0;
         for (int i = 0; i < rowIndex; i++)
             y += _rowHeights.TryGetValue(i, out var h) ? h : DefaultRowHeightPt;

@@ -30,9 +30,14 @@ internal static class DominatorTree
         {
             foreach (var to in tos)
             {
-                if (!visited.Contains(to)) continue; // 到達不能なノードへのエッジは無視
+                if (!visited.Contains(to))
+                {
+                    continue; // 到達不能なノードへのエッジは無視
+                }
                 if (!predecessors.TryGetValue(to, out var list))
+                {
                     predecessors[to] = list = [];
+                }
                 list.Add(from);
             }
         }
@@ -45,13 +50,22 @@ internal static class DominatorTree
             changed = false;
             foreach (var node in reversePostorder)
             {
-                if (node == rootId) continue;
-                if (!predecessors.TryGetValue(node, out var preds)) continue;
+                if (node == rootId)
+                {
+                    continue;
+                }
+                if (!predecessors.TryGetValue(node, out var preds))
+                {
+                    continue;
+                }
 
                 string? newIdom = null;
                 foreach (var p in preds)
                 {
-                    if (!idom.ContainsKey(p)) continue;
+                    if (!idom.ContainsKey(p))
+                    {
+                        continue;
+                    }
                     newIdom = newIdom == null ? p : Intersect(newIdom, p, idom, postorderIndex);
                 }
 
@@ -88,7 +102,10 @@ internal static class DominatorTree
         HashSet<string> visited,
         List<string> postorder)
     {
-        if (!visited.Add(nodeId)) return;
+        if (!visited.Add(nodeId))
+        {
+            return;
+        }
         foreach (var next in successors.GetValueOrDefault(nodeId, []))
             DfsPostorder(next, successors, visited, postorder);
         postorder.Add(nodeId);

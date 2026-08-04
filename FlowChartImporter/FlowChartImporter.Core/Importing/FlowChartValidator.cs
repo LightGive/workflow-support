@@ -16,9 +16,13 @@ public class FlowChartValidator
         foreach (var edge in chart.Edges)
         {
             if (outgoing.ContainsKey(edge.FromNodeId))
+            {
                 outgoing[edge.FromNodeId].Add(edge.ToNodeId);
+            }
             if (incoming.ContainsKey(edge.ToNodeId))
+            {
                 incoming[edge.ToNodeId].Add(edge.FromNodeId);
+            }
         }
 
         CheckDuplicateEdges(chart, nodeById, warnings);
@@ -64,7 +68,9 @@ public class FlowChartValidator
             bool hasOut = outgoing.TryGetValue(node.Id, out var outs) && outs.Count > 0;
             bool hasIn = incoming.TryGetValue(node.Id, out var ins) && ins.Count > 0;
             if (!hasOut && !hasIn)
+            {
                 warnings.Add($"[孤立ノード] {NodeInfo(node)} は矢印が1本も接続されていません。");
+            }
         }
     }
 
@@ -118,7 +124,10 @@ public class FlowChartValidator
             // 到達可能な範囲の中で行き止まりになっているノードを検出
             foreach (var nodeId in reachable)
             {
-                if (endNodeIds.Contains(nodeId)) continue;
+                if (endNodeIds.Contains(nodeId))
+                {
+                    continue;
+                }
                 if (outgoing.TryGetValue(nodeId, out var nexts) && nexts.Count == 0)
                 {
                     var node = nodeById.GetValueOrDefault(nodeId);
@@ -145,7 +154,9 @@ public class FlowChartValidator
             foreach (var next in outgoing.GetValueOrDefault(current, []))
             {
                 if (visited.Add(next))
+                {
                     queue.Enqueue(next);
+                }
             }
         }
 

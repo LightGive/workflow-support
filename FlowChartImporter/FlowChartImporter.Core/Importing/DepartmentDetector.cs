@@ -12,7 +12,10 @@ internal class DepartmentDetector
         var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable;
         var worksheet = worksheetPart.Worksheet!;
         var sheetData = worksheet.GetFirstChild<SheetData>();
-        if (sheetData == null) return [];
+        if (sheetData == null)
+        {
+            return [];
+        }
 
         // A列の結合セル開始行 → 終了行のマップを構築
         var mergeEndByStartRow = BuildMergeMap(worksheet);
@@ -24,13 +27,21 @@ internal class DepartmentDetector
 
             // 既に追加済みの範囲に含まれる行はスキップ
             if (result.Any(r => r.StartRow <= rowIndex && rowIndex <= r.EndRow))
+            {
                 continue;
+            }
 
             var cellA = row.Elements<Cell>().FirstOrDefault(c => IsColumnA(c.CellReference?.Value));
-            if (cellA == null) continue;
+            if (cellA == null)
+            {
+                continue;
+            }
 
             var value = GetCellText(cellA, sharedStrings);
-            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
 
             int endRow = mergeEndByStartRow.TryGetValue(rowIndex, out var mergeEnd)
                 ? mergeEnd
@@ -46,7 +57,10 @@ internal class DepartmentDetector
     {
         // 境界値は後(下側)の部署に割り当てる
         var matching = ranges.Where(r => r.StartRow <= centerRow && centerRow <= r.EndRow).ToList();
-        if (matching.Count == 0) return null;
+        if (matching.Count == 0)
+        {
+            return null;
+        }
         return matching.OrderByDescending(r => r.StartRow).First().Name;
     }
 
@@ -56,15 +70,24 @@ internal class DepartmentDetector
         foreach (var mc in worksheet.Descendants<MergeCell>())
         {
             var range = mc.Reference?.Value;
-            if (range == null) continue;
+            if (range == null)
+            {
+                continue;
+            }
 
             var parts = range.Split(':');
-            if (parts.Length != 2) continue;
+            if (parts.Length != 2)
+            {
+                continue;
+            }
 
             var (col1, row1) = ParseCellRef(parts[0]);
             var (_, row2) = ParseCellRef(parts[1]);
 
-            if (col1 != 0) continue; // A列のみ
+            if (col1 != 0)
+            {
+                continue; // A列のみ
+            }
             map[row1] = row2;
         }
         return map;
@@ -92,7 +115,10 @@ internal class DepartmentDetector
 
     private static bool IsColumnA(string? cellRef)
     {
-        if (string.IsNullOrEmpty(cellRef)) return false;
+        if (string.IsNullOrEmpty(cellRef))
+        {
+            return false;
+        }
         var (col, _) = ParseCellRef(cellRef);
         return col == 0;
     }

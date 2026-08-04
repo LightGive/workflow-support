@@ -15,7 +15,10 @@ internal static class BranchLabelResolver
         IReadOnlyList<ShapeInfo> yesNoTextBoxes,
         double searchRadiusPoints)
     {
-        if (yesNoTextBoxes.Count == 0) return;
+        if (yesNoTextBoxes.Count == 0)
+        {
+            return;
+        }
 
         var indexedByFromNode = connections
             .Select((connection, index) => (connection, index))
@@ -34,10 +37,16 @@ internal static class BranchLabelResolver
             foreach (var textBox in nearbyTextBoxes)
             {
                 var yesNo = MatchYesNo(textBox.Text);
-                if (yesNo == null) continue;
+                if (yesNo == null)
+                {
+                    continue;
+                }
 
                 var toTextBox = (X: textBox.CenterX - diamond.CenterX, Y: textBox.CenterY - diamond.CenterY);
-                if (toTextBox.X == 0 && toTextBox.Y == 0) continue;
+                if (toTextBox.X == 0 && toTextBox.Y == 0)
+                {
+                    continue;
+                }
 
                 int? bestIndex = null;
                 double bestAngle = double.MaxValue;
@@ -47,10 +56,16 @@ internal static class BranchLabelResolver
                     // Label は group のスナップショット取得時点の値なので、
                     // 同じ分岐を別のテキストボックスが先に処理して割り当て済みになっている場合があるため、
                     // 常に connections の最新値を見て判定する(でないと後勝ちで上書きしてしまう)。
-                    if (connections[index].Label != null) continue;
+                    if (connections[index].Label != null)
+                    {
+                        continue;
+                    }
 
                     var toArrowEnd = OutwardVector(diamond, connection);
-                    if (toArrowEnd.X == 0 && toArrowEnd.Y == 0) continue;
+                    if (toArrowEnd.X == 0 && toArrowEnd.Y == 0)
+                    {
+                        continue;
+                    }
 
                     var angle = AngleBetween(toTextBox, toArrowEnd);
                     if (angle < bestAngle)
@@ -73,8 +88,14 @@ internal static class BranchLabelResolver
     public static string? MatchYesNo(string text)
     {
         var trimmed = text.Trim();
-        if (string.Equals(trimmed, "YES", StringComparison.OrdinalIgnoreCase)) return "Y";
-        if (string.Equals(trimmed, "NO", StringComparison.OrdinalIgnoreCase)) return "N";
+        if (string.Equals(trimmed, "YES", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Y";
+        }
+        if (string.Equals(trimmed, "NO", StringComparison.OrdinalIgnoreCase))
+        {
+            return "N";
+        }
         return null;
     }
 
@@ -113,9 +134,18 @@ internal static class BranchLabelResolver
 
         var min = Math.Min(Math.Min(distLeft, distRight), Math.Min(distTop, distBottom));
 
-        if (min == distLeft) return (-1, 0);
-        if (min == distRight) return (1, 0);
-        if (min == distTop) return (0, -1);
+        if (min == distLeft)
+        {
+            return (-1, 0);
+        }
+        if (min == distRight)
+        {
+            return (1, 0);
+        }
+        if (min == distTop)
+        {
+            return (0, -1);
+        }
         return (0, 1);
     }
 

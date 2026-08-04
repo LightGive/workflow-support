@@ -26,9 +26,13 @@ public class FlowChartCsvExporter
         foreach (var edge in chart.Edges)
         {
             if (outgoing.TryGetValue(edge.FromNodeId, out var list))
+            {
                 list.Add(edge);
+            }
             if (inDegree.ContainsKey(edge.ToNodeId))
+            {
                 inDegree[edge.ToNodeId]++;
+            }
         }
 
         var categories = chart.Nodes.ToDictionary(
@@ -71,11 +75,20 @@ public class FlowChartCsvExporter
     // ── 種類判定 ─────────────────────────────────────────────────
     private static string ClassifyCategory(FlowNode node, int inDegree, int outDegree, ImportSettings settings)
     {
-        if (node.ShapeType == ShapeType.Diamond) return settings.CategoryNameBranch;
+        if (node.ShapeType == ShapeType.Diamond)
+        {
+            return settings.CategoryNameBranch;
+        }
         if (node.ShapeType == ShapeType.Ellipse)
         {
-            if (inDegree == 0) return settings.CategoryNameStart;
-            if (outDegree == 0) return settings.CategoryNameEnd;
+            if (inDegree == 0)
+            {
+                return settings.CategoryNameStart;
+            }
+            if (outDegree == 0)
+            {
+                return settings.CategoryNameEnd;
+            }
             return settings.CategoryNameCall; // 開始・終了のどちらでもない楕円 = 他フローの呼び出し
         }
         return settings.CategoryNameProcess;
@@ -89,9 +102,13 @@ public class FlowChartCsvExporter
     {
         var lines = new List<string>();
         if (node.InputFiles.Count > 0)
+        {
             lines.Add("入力: " + string.Join(", ", node.InputFiles));
+        }
         if (node.OutputFiles.Count > 0)
+        {
             lines.Add("出力: " + string.Join(", ", node.OutputFiles));
+        }
         foreach (var remark in node.Remarks)
             lines.Add("メモ: " + remark);
 
@@ -121,8 +138,14 @@ public class FlowChartCsvExporter
         var parts = new List<string>();
         foreach (var ancestorId in dominators)
         {
-            if (!nodeById.TryGetValue(ancestorId, out var ancestor)) continue; // 仮想ルートを除外
-            if (ancestor.ShapeType != ShapeType.Diamond) continue;
+            if (!nodeById.TryGetValue(ancestorId, out var ancestor))
+            {
+                continue; // 仮想ルートを除外
+            }
+            if (ancestor.ShapeType != ShapeType.Diamond)
+            {
+                continue;
+            }
 
             // このノードに到達できる、分岐から出る矢印の行き先を求める(重複行き先は1つにまとめる)
             var reachingTargets = outgoing[ancestorId]
@@ -132,7 +155,10 @@ public class FlowChartCsvExporter
                 .ToList();
 
             // 複数の行き先経由で到達できる場合、どちらを通ったか一意に定まらないため除外する
-            if (reachingTargets.Count != 1) continue;
+            if (reachingTargets.Count != 1)
+            {
+                continue;
+            }
 
             var label = outgoing[ancestorId].First(e => e.ToNodeId == reachingTargets[0]).Label;
             parts.Add(string.IsNullOrWhiteSpace(label)
@@ -153,8 +179,12 @@ public class FlowChartCsvExporter
         {
             var current = queue.Dequeue();
             foreach (var next in successors.GetValueOrDefault(current, []))
+            {
                 if (visited.Add(next))
+                {
                     queue.Enqueue(next);
+                }
+            }
         }
 
         return visited;
@@ -163,7 +193,9 @@ public class FlowChartCsvExporter
     private static string CsvField(string value)
     {
         if (value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r'))
+        {
             return "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
         return value;
     }
 }

@@ -21,11 +21,16 @@ internal class ExcelShapeExtractor
 
         var drawingsPart = worksheetPart.DrawingsPart;
         if (drawingsPart == null)
+        {
             return (shapes, connectors, warnings);
+        }
 
         var dimMap = new SheetDimensionMap(worksheetPart.Worksheet!);
         var wsDr = drawingsPart.WorksheetDrawing;
-        if (wsDr == null) return (shapes, connectors, warnings);
+        if (wsDr == null)
+        {
+            return (shapes, connectors, warnings);
+        }
 
         foreach (var anchor in wsDr.Elements<TwoCellAnchor>())
         {
@@ -41,7 +46,10 @@ internal class ExcelShapeExtractor
             if (sp != null)
             {
                 var info = ExtractShape(sp, anchorLeft, anchorTop, fromRow, fromCol, toRow, toCol, warnings);
-                if (info != null) shapes.Add(info);
+                if (info != null)
+                {
+                    shapes.Add(info);
+                }
                 continue;
             }
 
@@ -52,7 +60,10 @@ internal class ExcelShapeExtractor
                 var info = ExtractExplicitConnector(cxnSp, anchorLeft, anchorTop,
                     dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu),
                     dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu));
-                if (info != null) connectors.Add(info);
+                if (info != null)
+                {
+                    connectors.Add(info);
+                }
             }
         }
 
@@ -66,7 +77,10 @@ internal class ExcelShapeExtractor
             if (sp != null)
             {
                 var info = ExtractShape(sp, anchorLeft, anchorTop, fromRow, fromCol, fromRow, fromCol, warnings);
-                if (info != null) shapes.Add(info);
+                if (info != null)
+                {
+                    shapes.Add(info);
+                }
             }
         }
 
@@ -146,7 +160,10 @@ internal class ExcelShapeExtractor
         double startX, double startY, double endX, double endY)
     {
         var cNvPr = cxnSp.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties;
-        if (cNvPr?.Id?.Value == null) return null;
+        if (cNvPr?.Id?.Value == null)
+        {
+            return null;
+        }
 
         var cxnSpPr = cxnSp.NonVisualConnectionShapeProperties
             ?.NonVisualConnectorShapeDrawingProperties;
@@ -177,7 +194,10 @@ internal class ExcelShapeExtractor
     {
         // xdr:txBody を取得 (Drawing.Spreadsheet.TextBody)
         var textBody = sp.GetFirstChild<DwgSheet.TextBody>();
-        if (textBody == null) return string.Empty;
+        if (textBody == null)
+        {
+            return string.Empty;
+        }
 
         return string.Join("\n", textBody.Elements<Paragraph>()
             .Select(p => string.Concat(
@@ -187,7 +207,10 @@ internal class ExcelShapeExtractor
 
     private static (int col, long colOff, int row, long rowOff) ReadMarker(MarkerType? marker)
     {
-        if (marker == null) return (0, 0, 0, 0);
+        if (marker == null)
+        {
+            return (0, 0, 0, 0);
+        }
         return (
             int.TryParse(marker.ColumnId?.Text, out var c) ? c : 0,
             long.TryParse(marker.ColumnOffset?.Text, out var co) ? co : 0,
