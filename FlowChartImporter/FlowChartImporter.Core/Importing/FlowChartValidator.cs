@@ -166,7 +166,7 @@ public class FlowChartValidator
     private static string NodeInfo(FlowNode? node) =>
         node == null
             ? "(不明)"
-            : $"No.{node.Number} '{Truncate(node.Text)}' (部署: {node.Department}, タイプ: {node.ShapeType})";
+            : $"No.{node.Number} '{Truncate(node.Text)}' (部署: {string.Join("/", node.Departments)}, タイプ: {node.ShapeType})";
 
     private static string Truncate(string text, int max = 20) =>
         text.Length <= max ? text : text[..max] + "…";

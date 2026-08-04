@@ -29,8 +29,28 @@ const string UsageText = """
       {
         "connectionTolerancePoints": 10.0,
         "nodeNumberingStrategy": "default",
-        "nodeNumberFormat": "A-{no}"
+        "nodeNumberFormat": "A-{no}",
+        "branchLabelSearchRadiusPoints": 200.0,
+        "routeCheckStartShapeType": null,
+        "routeCheckEndShapeType": null,
+        "categoryNameStart": "開始",
+        "categoryNameEnd": "終了",
+        "categoryNameBranch": "分岐",
+        "categoryNameProcess": "処理",
+        "categoryNameCall": "呼び出し"
       }
+
+      connectionTolerancePoints      : コネクタの座標近接判定の許容誤差(ポイント単位)
+      nodeNumberingStrategy          : ノード採番戦略名("default" = 左→右、同列は上→下)
+      nodeNumberFormat               : 処理名の表示フォーマット。"{no}" が採番番号に置換される
+      branchLabelSearchRadiusPoints  : 分岐(ひし形)の近くにあるYES/NOラベルを探す範囲(ポイント単位)。
+                                        矢印自体にラベルが無い場合のみ使用。反映されない場合は広げて調整する
+      routeCheckStartShapeType /
+      routeCheckEndShapeType         : ルート完全性チェックの開始・終了シェイプタイプ(例: "ellipse")。
+                                        両方指定した場合のみ、開始から終了へ到達できるか検証する
+      categoryName*                  : CSV出力の「種類」列に使う表示名(開始/終了/分岐/処理/呼び出し)
+
+      ファイルが存在しない場合はデフォルト値で新規作成される。詳細は docs/spec.md の「6. 設定ファイル」を参照。
     """;
 
 // ── 引数パース ──────────────────────────────────────────────────

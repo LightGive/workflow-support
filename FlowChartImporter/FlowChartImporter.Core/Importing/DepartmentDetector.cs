@@ -53,15 +53,17 @@ internal class DepartmentDetector
         return [.. result.OrderBy(r => r.StartRow)];
     }
 
-    public string? GetDepartment(List<DepartmentRange> ranges, int centerRow)
+    /// <summary>
+    /// 図形の行範囲(fromRow〜toRow)と重なる部署をすべて返す(開始行順)。
+    /// 図形が複数の部署をまたいで配置されている場合は複数件返る。
+    /// </summary>
+    public List<string> GetDepartments(List<DepartmentRange> ranges, int fromRow, int toRow)
     {
-        // 境界値は後(下側)の部署に割り当てる
-        var matching = ranges.Where(r => r.StartRow <= centerRow && centerRow <= r.EndRow).ToList();
-        if (matching.Count == 0)
-        {
-            return null;
-        }
-        return matching.OrderByDescending(r => r.StartRow).First().Name;
+        return ranges
+            .Where(r => r.StartRow <= toRow && fromRow <= r.EndRow)
+            .OrderBy(r => r.StartRow)
+            .Select(r => r.Name)
+            .ToList();
     }
 
     private static Dictionary<int, int> BuildMergeMap(Worksheet worksheet)

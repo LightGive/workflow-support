@@ -38,28 +38,28 @@ public class ExcelImportService
         var lineShapes = shapes.Where(s => s.ShapeType == ShapeType.Line).ToList();
         var documentShapes = shapes.Where(s => s.ShapeType == ShapeType.Document).ToList();
 
+        // 矩形(Rectangle)はプロセスを表す図形だが、枠線が無いものはプロセスではなく、
+        // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
+        bool IsBorderlessRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.HasNoLine;
+
         // テキストボックス(Excelの「テキストボックス」挿入機能で作られた図形)はノードには含めない。
         // YES/NOテキストは分岐のラベル判定に、それ以外は近くのノードの備考として使う。
-        // 分岐先を示すYES/NOは、テキストボックスの代わりに枠線なしの矩形(Rectangle)で
-        // 作られている場合もあるため、同様に判定対象とする。
-        bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || (s.ShapeType == ShapeType.Rectangle && s.HasNoLine);
-
-        // 「[」(角かっこ)の図形もテキストボックスと同様、ノードではなく
-        // 近くのノードへの備考として扱う。
-        bool IsRemarkCandidate(Internal.ShapeInfo s) => s.IsTextBox || s.ShapeType == ShapeType.Bracket;
+        bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || IsBorderlessRectangle(s);
 
         var yesNoTextBoxes = shapes
             .Where(s => IsYesNoLabelCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) != null)
             .ToList();
+
+        // ノードへの備考(メモ)は「[」(角かっこ)の図形に書かれたテキストのみを対象とする。
         var remarkTextBoxes = shapes
-            .Where(s => IsRemarkCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) == null)
+            .Where(s => s.ShapeType == ShapeType.Bracket)
             .ToList();
 
         var nodeShapes = shapes.Where(s => s.ShapeType != ShapeType.Document
                                         && s.ShapeType != ShapeType.Line
                                         && s.ShapeType != ShapeType.Bracket
                                         && !s.IsTextBox
-                                        && !yesNoTextBoxes.Contains(s)).ToList();
+                                        && !IsBorderlessRectangle(s)).ToList();
 
         // Line シェイプを ConnectorInfo に変換してコネクタリストに追加
         foreach (var line in lineShapes)
@@ -107,8 +107,7 @@ public class ExcelImportService
 
         foreach (var (shape, node) in nodeMap)
         {
-            node.Department = deptDetector.GetDepartment(deptRanges, shape.CenterAnchorRow)
-                              ?? string.Empty;
+            node.Departments = deptDetector.GetDepartments(deptRanges, shape.AnchorFromRow, shape.AnchorToRow);
         }
 
         // 4. 書類シェイプを親ノードに紐づけ

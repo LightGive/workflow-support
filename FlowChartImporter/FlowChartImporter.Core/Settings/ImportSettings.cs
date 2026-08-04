@@ -32,7 +32,7 @@ public class ImportSettings
     /// 分岐(ひし形)ノードの近くにあるYES/NOテキストボックスを検索する範囲(ポイント単位)。
     /// 矢印自体にテキストが無い場合のみ使われる。
     /// </summary>
-    public double BranchLabelSearchRadiusPoints { get; set; } = 80.0;
+    public double BranchLabelSearchRadiusPoints { get; set; } = 200.0;
 
     /// <summary>CSV出力の「種類」列で使う、開始ノードの種類名</summary>
     public string CategoryNameStart { get; set; } = "開始";

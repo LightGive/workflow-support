@@ -87,12 +87,14 @@ internal static class BranchLabelResolver
     /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字を区別しない)。該当しない場合はnull。</summary>
     public static string? MatchYesNo(string text)
     {
-        var trimmed = text.Trim();
-        if (string.Equals(trimmed, "YES", StringComparison.OrdinalIgnoreCase))
+        // "[ No ]" や "YES]" のように、装飾のかっこ・空白が付いている場合があるため、
+        // 英字以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
+        var normalized = new string(text.Where(char.IsLetter).ToArray());
+        if (string.Equals(normalized, "YES", StringComparison.OrdinalIgnoreCase))
         {
             return "Y";
         }
-        if (string.Equals(trimmed, "NO", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(normalized, "NO", StringComparison.OrdinalIgnoreCase))
         {
             return "N";
         }

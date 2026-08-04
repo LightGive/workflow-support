@@ -64,7 +64,7 @@ public class FlowChartCsvExporter
             sb.Append(CsvField(displayNames[node.Id])).Append(',')
               .Append(CsvField(categories[node.Id])).Append(',')
               .Append(CsvField(route)).Append(',')
-              .Append(CsvField(node.Department)).Append(',')
+              .Append(CsvField(string.Join("/", node.Departments))).Append(',')
               .Append(CsvField(node.Text)).Append(',')
               .Append(CsvField(BuildRemarks(node))).Append("\r\n");
         }

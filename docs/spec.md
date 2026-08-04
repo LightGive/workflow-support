@@ -253,7 +253,7 @@ FlowChartImporter/
   "connectionTolerancePoints": 10.0,
   "nodeNumberingStrategy": "default",
   "nodeNumberFormat": "A-{no}",
-  "branchLabelSearchRadiusPoints": 80.0,
+  "branchLabelSearchRadiusPoints": 200.0,
   "routeCheckStartShapeType": "ellipse",
   "routeCheckEndShapeType": "ellipse"
 }
@@ -261,10 +261,10 @@ FlowChartImporter/
 
 | プロパティ | 型 | デフォルト | 説明 |
 |-----------|-----|-----------|------|
-| `connectionTolerancePoints` | number | `10.0` | コネクタ近接判定の許容誤差(ポイント) |
+| `connectionTolerancePoints` | number | `10.0` | コネクタ近接判定の許容誤差(ポイント)。矢印の座標近接フォールバック判定にのみ使用(4.2.2参照) |
 | `nodeNumberingStrategy` | string | `"default"` | 採番戦略名 |
 | `nodeNumberFormat` | string | `"{no}"` | CSV出力等で使う処理名の表示フォーマット。`{no}`が採番番号に置換される(例: `"A-{no}"` → `"A-10"`) |
-| `branchLabelSearchRadiusPoints` | number | `80.0` | 分岐ノードの近くにあるYES/NOテキストボックスを検索する範囲(ポイント単位)。矢印自体にテキストが無い場合のみ使用(4.2.3参照) |
+| `branchLabelSearchRadiusPoints` | number | `200.0` | 分岐ノードの近くにあるYES/NOテキストボックス(または線なしRectangle)を検索する範囲(ポイント単位)。矢印自体にテキストが無い場合のみ使用(4.2.3参照)。実データでYES/NOラベルが図形から離れて配置されているケースがあったため、既定値を80→200に拡大した。ラベルが反映されない場合はこの値をさらに広げて調整する |
 | `categoryNameStart` | string | `"開始"` | CSV出力の「種類」列で使う、開始ノードの種類名(4.6.1参照) |
 | `categoryNameEnd` | string | `"終了"` | CSV出力の「種類」列で使う、終了ノードの種類名(4.6.1参照) |
 | `categoryNameBranch` | string | `"分岐"` | CSV出力の「種類」列で使う、分岐(ひし形)ノードの種類名(4.6.1参照) |

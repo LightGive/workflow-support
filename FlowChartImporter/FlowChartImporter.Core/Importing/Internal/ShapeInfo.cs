@@ -40,6 +40,4 @@ internal class ShapeInfo
     public int AnchorFromCol { get; init; }
     public int AnchorToRow { get; init; }
     public int AnchorToCol { get; init; }
-
-    public int CenterAnchorRow => (AnchorFromRow + AnchorToRow) / 2;
 }

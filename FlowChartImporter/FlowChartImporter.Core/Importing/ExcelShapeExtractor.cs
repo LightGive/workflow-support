@@ -125,6 +125,16 @@ internal class ExcelShapeExtractor
         var prstGeom = sp.ShapeProperties?.GetFirstChild<PresetGeometry>();
         var preset = prstGeom?.Preset?.InnerText;
         var shapeType = MapPreset(preset);
+        if (shapeType == Models.ShapeType.Unknown)
+        {
+            // 一部のファイルでは「フローチャート: 判断」(ひし形)がプリセットではなく
+            // 自由図形(a:custGeom)のひし形パスとして保存されているため、その形状も判定する。
+            var custGeom = sp.ShapeProperties?.GetFirstChild<CustomGeometry>();
+            if (IsDiamondPath(custGeom))
+            {
+                shapeType = Models.ShapeType.Diamond;
+            }
+        }
         var text = ExtractText(sp);
         var isTextBox = sp.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value ?? false;
         var isElbowConnector = preset is "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5";
@@ -181,6 +191,53 @@ internal class ExcelShapeExtractor
             EndY = endY,
             IsDashed = IsDashedLine(cxnSp.ShapeProperties?.GetFirstChild<Outline>()),
         };
+    }
+
+    // 自由図形(a:custGeom)のパスが、上下左右の中点を頂点とするひし形かどうかを判定する。
+    // 「フローチャート: 判断」プリセットが custGeom に変換保存されているケースを検出するために使う。
+    private static bool IsDiamondPath(CustomGeometry? custGeom)
+    {
+        var path = custGeom?.GetFirstChild<PathList>()?.Elements<DocumentFormat.OpenXml.Drawing.Path>().FirstOrDefault();
+        if (path == null)
+        {
+            return false;
+        }
+
+        var points = new List<(double X, double Y)>();
+        foreach (var child in path.ChildElements)
+        {
+            Point? pt = child switch
+            {
+                MoveTo moveTo => moveTo.Point,
+                LineTo lineTo => lineTo.Point,
+                _ => null,
+            };
+            if (pt == null)
+            {
+                continue;
+            }
+            if (!double.TryParse(pt.X?.Value, out var x) || !double.TryParse(pt.Y?.Value, out var y))
+            {
+                return false;
+            }
+            points.Add((x, y));
+        }
+
+        var distinct = points.Distinct().ToList();
+        if (distinct.Count != 4)
+        {
+            return false;
+        }
+
+        double w = path.Width?.Value ?? 21600;
+        double h = path.Height?.Value ?? 21600;
+        double midX = w / 2.0, midY = h / 2.0;
+        double tolerance = Math.Max(w, h) * 0.05;
+
+        bool HasPointNear(double x, double y) =>
+            distinct.Any(p => Math.Abs(p.X - x) <= tolerance && Math.Abs(p.Y - y) <= tolerance);
+
+        return HasPointNear(midX, 0) && HasPointNear(w, midY) && HasPointNear(midX, h) && HasPointNear(0, midY);
     }
 
     // OpenXML 3.x の PresetLineDashValues は定数として扱えないため InnerText で文字列比較する
