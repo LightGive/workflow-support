@@ -12,6 +12,28 @@ internal class ExcelShapeExtractor
 {
     private const double EmuToPt = 1.0 / 12700.0;
 
+    // OOXML プリセット図形名 (a:prstGeom の prst 属性値)
+    private const string PresetRectangle = "rect";
+    private const string PresetFlowChartProcess = "flowChartProcess";
+    private const string PresetFlowChartAlternateProcess = "flowChartAlternateProcess";
+    private const string PresetRoundRectangle = "roundRect";
+    private const string PresetFlowChartDecision = "flowChartDecision";
+    private const string PresetEllipse = "ellipse";
+    private const string PresetFlowChartDocument = "flowChartDocument";
+    private const string PresetFoldedCorner = "foldedCorner";
+    private const string PresetParallelogram = "parallelogram";
+    private const string PresetLeftBracket = "leftBracket";
+    private const string PresetRightBracket = "rightBracket";
+    private const string PresetLine = "line";
+    private const string PresetStraightConnector1 = "straightConnector1";
+    private const string PresetBentConnector2 = "bentConnector2";
+    private const string PresetBentConnector3 = "bentConnector3";
+    private const string PresetBentConnector4 = "bentConnector4";
+    private const string PresetBentConnector5 = "bentConnector5";
+
+    // OOXML 線種名 (a:prstDash の val 属性値)
+    private const string DashStyleSolid = "solid";
+
     // グループ図形(xdr:grpSp)内の子図形の座標系(EMU、子座標系原点基準)を
     // ワークシート上の絶対座標系(EMU)に変換するアフィン変換。
     // グループに属さない図形は Identity (変換なし) を使う。
@@ -240,7 +262,7 @@ internal class ExcelShapeExtractor
         }
         var text = ExtractText(sp);
         var isTextBox = sp.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value ?? false;
-        var isElbowConnector = preset is "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5";
+        var isElbowConnector = preset is PresetBentConnector2 or PresetBentConnector3 or PresetBentConnector4 or PresetBentConnector5;
         var outline = sp.ShapeProperties?.GetFirstChild<Outline>();
         var hasNoLine = outline?.GetFirstChild<NoFill>() != null;
         var isDashed = IsDashedLine(outline);
@@ -391,7 +413,7 @@ internal class ExcelShapeExtractor
     private static bool IsDashedLine(Outline? outline)
     {
         var dashVal = outline?.GetFirstChild<PresetDash>()?.Val?.InnerText;
-        return !string.IsNullOrEmpty(dashVal) && dashVal != "solid";
+        return !string.IsNullOrEmpty(dashVal) && dashVal != DashStyleSolid;
     }
 
     private static string ExtractText(DwgSheet.Shape sp)
@@ -426,15 +448,15 @@ internal class ExcelShapeExtractor
     // OpenXML 3.x の ShapeTypeValues は定数として扱えないため InnerText で文字列比較する
     private static Models.ShapeType MapPreset(string? preset) => preset switch
     {
-        "rect" or "flowChartProcess" or "flowChartAlternateProcess" or "roundRect"
+        PresetRectangle or PresetFlowChartProcess or PresetFlowChartAlternateProcess or PresetRoundRectangle
             => Models.ShapeType.Rectangle,
-        "flowChartDecision" => Models.ShapeType.Diamond,
-        "ellipse" => Models.ShapeType.Ellipse,
-        "flowChartDocument" or "foldedCorner" => Models.ShapeType.Document,
-        "parallelogram" => Models.ShapeType.Parallelogram,
-        "leftBracket" or "rightBracket" => Models.ShapeType.Bracket,
-        "line" or "straightConnector1"
-            or "bentConnector2" or "bentConnector3" or "bentConnector4" or "bentConnector5"
+        PresetFlowChartDecision => Models.ShapeType.Diamond,
+        PresetEllipse => Models.ShapeType.Ellipse,
+        PresetFlowChartDocument or PresetFoldedCorner => Models.ShapeType.Document,
+        PresetParallelogram => Models.ShapeType.Parallelogram,
+        PresetLeftBracket or PresetRightBracket => Models.ShapeType.Bracket,
+        PresetLine or PresetStraightConnector1
+            or PresetBentConnector2 or PresetBentConnector3 or PresetBentConnector4 or PresetBentConnector5
             => Models.ShapeType.Line,
         null or "" => Models.ShapeType.Unknown,
         _ => Models.ShapeType.Other,
