@@ -2,7 +2,7 @@ using FlowChartImporter.Core.Models;
 
 namespace FlowChartImporter.Core.Importing.Internal;
 
-internal record ShapeInfo
+internal class ShapeInfo
 {
     public required uint XmlId { get; init; }
     public required string Name { get; init; }
@@ -40,7 +40,4 @@ internal record ShapeInfo
     public int AnchorFromCol { get; init; }
     public int AnchorToRow { get; init; }
     public int AnchorToCol { get; init; }
-
-    /// <summary>直接の親グループ(xdr:grpSp)のXmlId。グループに属さない場合はnull</summary>
-    public uint? GroupId { get; init; }
 }

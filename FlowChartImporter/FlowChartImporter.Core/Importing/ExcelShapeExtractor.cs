@@ -58,7 +58,7 @@ internal class ExcelShapeExtractor
             var sp = anchor.GetFirstChild<DwgSheet.Shape>();
             if (sp != null)
             {
-                var info = ExtractShape(sp, GroupTransform.Identity, null, anchorLeft, anchorTop, fromRow, fromCol, toRow, toCol, warnings);
+                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, fromRow, fromCol, toRow, toCol, warnings);
                 if (info != null)
                 {
                     shapes.Add(info);
@@ -97,7 +97,7 @@ internal class ExcelShapeExtractor
             var sp = anchor.GetFirstChild<DwgSheet.Shape>();
             if (sp != null)
             {
-                var info = ExtractShape(sp, GroupTransform.Identity, null, anchorLeft, anchorTop, fromRow, fromCol, fromRow, fromCol, warnings);
+                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, fromRow, fromCol, fromRow, fromCol, warnings);
                 if (info != null)
                 {
                     shapes.Add(info);
@@ -125,12 +125,11 @@ internal class ExcelShapeExtractor
         List<ConnectorInfo> connectors,
         List<string> warnings)
     {
-        var groupId = grpSp.NonVisualGroupShapeProperties?.NonVisualDrawingProperties?.Id?.Value;
         var transform = ComposeGroupTransform(parentTransform, grpSp.GroupShapeProperties?.TransformGroup);
 
         foreach (var sp in grpSp.Elements<DwgSheet.Shape>())
         {
-            var info = ExtractShape(sp, transform, groupId, 0, 0, fromRow, fromCol, toRow, toCol, warnings);
+            var info = ExtractShape(sp, transform, 0, 0, fromRow, fromCol, toRow, toCol, warnings);
             if (info != null)
             {
                 shapes.Add(info);
@@ -174,7 +173,7 @@ internal class ExcelShapeExtractor
 
     private static ShapeInfo? ExtractShape(
         DwgSheet.Shape sp,
-        GroupTransform transform, uint? groupId,
+        GroupTransform transform,
         double anchorLeft, double anchorTop,
         int fromRow, int fromCol, int toRow, int toCol,
         List<string> warnings)
@@ -248,7 +247,6 @@ internal class ExcelShapeExtractor
             IsElbowConnector = isElbowConnector,
             HasNoLine = hasNoLine,
             IsDashed = isDashed,
-            GroupId = groupId,
         };
     }
 

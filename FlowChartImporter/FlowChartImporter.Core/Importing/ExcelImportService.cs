@@ -51,28 +51,8 @@ public class ExcelImportService
             .ToList();
 
         // ノードへの備考(メモ)は「[」(角かっこ)の図形に書かれたテキストのみを対象とする。
-        // 「[」自体は空で、テキストボックスや線なしRectangleとグループ化されている場合は、
-        // その同じグループ内の図形のテキストも備考として取り込む。
         var remarkTextBoxes = shapes
             .Where(s => s.ShapeType == ShapeType.Bracket)
-            .Select(bracket =>
-            {
-                if (bracket.GroupId == null)
-                {
-                    return bracket;
-                }
-
-                var groupedText = shapes
-                    .Where(s => s.GroupId == bracket.GroupId && s.XmlId != bracket.XmlId
-                                && (s.IsTextBox || IsBorderlessRectangle(s)))
-                    .Select(s => s.Text.Trim())
-                    .Where(t => t.Length > 0);
-
-                var combined = string.Join("\n",
-                    new[] { bracket.Text.Trim() }.Concat(groupedText).Where(t => t.Length > 0));
-
-                return combined == bracket.Text ? bracket : bracket with { Text = combined };
-            })
             .ToList();
 
         var nodeShapes = shapes.Where(s => s.ShapeType != ShapeType.Document
