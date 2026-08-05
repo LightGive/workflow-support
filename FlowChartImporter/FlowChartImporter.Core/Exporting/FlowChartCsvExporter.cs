@@ -53,14 +53,13 @@ public class FlowChartCsvExporter
             .ToList();
 
         var idom = DominatorTree.Compute(VirtualRootId, successors);
-        var reachable = chart.Nodes.ToDictionary(n => n.Id, n => BfsReachable(n.Id, successors));
 
         var sb = new StringBuilder();
         sb.Append("処理名,種類,分岐ルート,部署,内容,備考\r\n");
 
         foreach (var node in chart.Nodes.OrderBy(n => n.Number))
         {
-            var route = BuildBranchRoute(node.Id, idom, nodeById, displayNames, outgoing, reachable);
+            var route = BuildBranchRoute(node.Id, idom, nodeById, displayNames, outgoing, successors);
             sb.Append(CsvField(displayNames[node.Id])).Append(',')
               .Append(CsvField(categories[node.Id])).Append(',')
               .Append(CsvField(route)).Append(',')
@@ -124,7 +123,7 @@ public class FlowChartCsvExporter
         Dictionary<string, FlowNode> nodeById,
         Dictionary<string, string> displayNames,
         Dictionary<string, List<FlowEdge>> outgoing,
-        Dictionary<string, HashSet<string>> reachable)
+        Dictionary<string, List<string>> successors)
     {
         var dominators = new List<string>();
         var current = nodeId;
@@ -147,9 +146,10 @@ public class FlowChartCsvExporter
                 continue;
             }
 
-            // このノードに到達できる、分岐から出る矢印の行き先を求める(重複行き先は1つにまとめる)
+            // このノードに到達できる、分岐から出る矢印の行き先を求める(重複行き先は1つにまとめる)。
+            // 分岐自身を再度通る経路(やり直しループ)は「その方向を通った」とはみなさないよう除外する。
             var reachingTargets = outgoing[ancestorId]
-                .Where(e => reachable.TryGetValue(e.ToNodeId, out var set) && set.Contains(nodeId))
+                .Where(e => CanReach(e.ToNodeId, nodeId, avoidId: ancestorId, successors))
                 .Select(e => e.ToNodeId)
                 .Distinct()
                 .ToList();
@@ -169,17 +169,30 @@ public class FlowChartCsvExporter
         return string.Join(",", parts);
     }
 
-    private static HashSet<string> BfsReachable(string startId, Dictionary<string, List<string>> successors)
+    // fromId から targetId に到達できるかを、avoidId を経由せずに判定する。
+    // 分岐の出口ごとの到達判定で、分岐自身に戻るループ経路を辿らないようにするために使う。
+    private static bool CanReach(
+        string fromId, string targetId, string avoidId,
+        Dictionary<string, List<string>> successors)
     {
-        var visited = new HashSet<string> { startId };
+        if (fromId == targetId)
+        {
+            return true;
+        }
+
+        var visited = new HashSet<string> { fromId, avoidId };
         var queue = new Queue<string>();
-        queue.Enqueue(startId);
+        queue.Enqueue(fromId);
 
         while (queue.Count > 0)
         {
             var current = queue.Dequeue();
             foreach (var next in successors.GetValueOrDefault(current, []))
             {
+                if (next == targetId)
+                {
+                    return true;
+                }
                 if (visited.Add(next))
                 {
                     queue.Enqueue(next);
@@ -187,7 +200,7 @@ public class FlowChartCsvExporter
             }
         }
 
-        return visited;
+        return false;
     }
 
     private static string CsvField(string value)

@@ -18,7 +18,8 @@ public static class NodeNumberingStrategyFactory
 }
 
 /// <summary>
-/// X座標昇順(左→右)で採番し、同じ列グループ内はY座標昇順(上→下)で採番する。
+/// X座標(図形の左上を基準点とした位置)昇順(左→右)で採番し、
+/// 同じX座標の場合はY座標昇順(上→下)で採番する。一番左を0番とする。
 /// </summary>
 public class DefaultNodeNumberingStrategy : INodeNumberingStrategy
 {
@@ -31,9 +32,9 @@ public class DefaultNodeNumberingStrategy : INodeNumberingStrategy
             .ToList();
 
         for (int i = 0; i < ordered.Count; i++)
-            ordered[i].Number = i + 1;
+            ordered[i].Number = i;
 
-        int next = ordered.Count + 1;
+        int next = ordered.Count;
         foreach (var node in nodes.Where(n => n.Position == null))
             node.Number = next++;
     }
