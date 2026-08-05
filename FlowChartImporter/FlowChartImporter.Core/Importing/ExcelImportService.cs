@@ -42,6 +42,9 @@ public class ExcelImportService
         // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
         bool IsBorderlessRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.HasNoLine;
 
+        // 点線で囲われた矩形もプロセスとしては扱わない。
+        bool IsDashedRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.IsDashed;
+
         // テキストボックス(Excelの「テキストボックス」挿入機能で作られた図形)はノードには含めない。
         // YES/NOテキストは分岐のラベル判定に、それ以外は近くのノードの備考として使う。
         bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || IsBorderlessRectangle(s);
@@ -59,7 +62,8 @@ public class ExcelImportService
                                         && s.ShapeType != ShapeType.Line
                                         && s.ShapeType != ShapeType.Bracket
                                         && !s.IsTextBox
-                                        && !IsBorderlessRectangle(s)).ToList();
+                                        && !IsBorderlessRectangle(s)
+                                        && !IsDashedRectangle(s)).ToList();
 
         // Line シェイプを ConnectorInfo に変換してコネクタリストに追加
         foreach (var line in lineShapes)
