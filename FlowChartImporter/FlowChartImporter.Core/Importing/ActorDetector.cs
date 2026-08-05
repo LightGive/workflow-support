@@ -3,11 +3,11 @@ using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace FlowChartImporter.Core.Importing;
 
-internal class DepartmentDetector
+internal class ActorDetector
 {
-    public record DepartmentRange(string Name, int StartRow, int EndRow); // 0始まり、両端含む
+    public record ActorRange(string Name, int StartRow, int EndRow); // 0始まり、両端含む
 
-    public List<DepartmentRange> Detect(WorkbookPart workbookPart, WorksheetPart worksheetPart)
+    public List<ActorRange> Detect(WorkbookPart workbookPart, WorksheetPart worksheetPart)
     {
         var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable;
         var worksheet = worksheetPart.Worksheet!;
@@ -19,7 +19,7 @@ internal class DepartmentDetector
 
         // A列の結合セル開始行 → 終了行のマップを構築
         var mergeEndByStartRow = BuildMergeMap(worksheet);
-        var result = new List<DepartmentRange>();
+        var result = new List<ActorRange>();
 
         foreach (var row in sheetData.Elements<Row>().OrderBy(r => r.RowIndex?.Value ?? 0))
         {
@@ -47,17 +47,17 @@ internal class DepartmentDetector
                 ? mergeEnd
                 : rowIndex;
 
-            result.Add(new DepartmentRange(value, rowIndex, endRow));
+            result.Add(new ActorRange(value, rowIndex, endRow));
         }
 
         return [.. result.OrderBy(r => r.StartRow)];
     }
 
     /// <summary>
-    /// 図形の行範囲(fromRow〜toRow)と重なる部署をすべて返す(開始行順)。
-    /// 図形が複数の部署をまたいで配置されている場合は複数件返る。
+    /// 図形の行範囲(fromRow〜toRow)と重なる実施主体(部署・システム・他社等)をすべて返す(開始行順)。
+    /// 図形が複数の実施主体をまたいで配置されている場合は複数件返る。
     /// </summary>
-    public List<string> GetDepartments(List<DepartmentRange> ranges, int fromRow, int toRow)
+    public List<string> GetActors(List<ActorRange> ranges, int fromRow, int toRow)
     {
         return ranges
             .Where(r => r.StartRow <= toRow && fromRow <= r.EndRow)

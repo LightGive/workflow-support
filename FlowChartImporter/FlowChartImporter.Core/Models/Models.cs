@@ -31,8 +31,8 @@ public class FlowNode
 
     public ShapeType ShapeType { get; set; }
 
-    /// <summary>左端列の部署名から判定した担当部署。複数部署をまたぐ図形の場合は複数件になる</summary>
-    public List<string> Departments { get; set; }
+    /// <summary>左端列の名称から判定した実施主体(部署・システム・他社等)。複数をまたぐ図形の場合は複数件になる</summary>
+    public List<string> Actors { get; set; }
 
     public Position? Position { get; set; }
 
@@ -49,7 +49,7 @@ public class FlowNode
     {
         Id = id;
         Text = string.Empty;
-        Departments = [];
+        Actors = [];
         InputFiles = [];
         OutputFiles = [];
         Remarks = [];

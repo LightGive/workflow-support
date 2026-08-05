@@ -112,13 +112,13 @@ public class ExcelImportService
             nodeMap.Add((shape, node));
         }
 
-        // 3. 担当部署を判定
-        var deptDetector = new DepartmentDetector();
-        var deptRanges = deptDetector.Detect(workbookPart, worksheetPart);
+        // 3. 実施主体(部署・システム・他社等)を判定
+        var actorDetector = new ActorDetector();
+        var actorRanges = actorDetector.Detect(workbookPart, worksheetPart);
 
         foreach (var (shape, node) in nodeMap)
         {
-            node.Departments = deptDetector.GetDepartments(deptRanges, shape.AnchorFromRow, shape.AnchorToRow);
+            node.Actors = actorDetector.GetActors(actorRanges, shape.AnchorFromRow, shape.AnchorToRow);
         }
 
         // 4. 書類シェイプを親ノードに紐づけ
@@ -153,7 +153,7 @@ public class ExcelImportService
         var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
         foreach (var node in isolatedNodes)
             allWarnings.Add(
-                $"[孤立シェイプ除外] '{Truncate(node.Text)}' (部署: {string.Join("/", node.Departments)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
+                $"[孤立シェイプ除外] '{Truncate(node.Text)}' (実施主体: {string.Join("/", node.Actors)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
 
         // 7. ノード番号を採番(矢印で接続されたノードのみが対象)

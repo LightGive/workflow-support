@@ -9,7 +9,7 @@ namespace FlowChartImporter.Core.Exporting;
 /// 1列目: 処理名(採番フォーマット適用)
 /// 2列目: フローの種類(開始/終了/分岐/処理/呼び出し)
 /// 3列目: 開始からそのフローまでに必ず通過し、かつ通過方向が一意に定まる分岐のYES/NO一覧
-/// 4列目: 担当部署
+/// 4列目: 実施主体(部署・システム・他社等)
 /// 5列目: 内容(図形内テキスト)
 /// 6列目: 備考(入力/出力ファイル、近くのテキストボックスの内容)
 /// </summary>
@@ -55,7 +55,7 @@ public class FlowChartCsvExporter
         var idom = DominatorTree.Compute(VirtualRootId, successors);
 
         var sb = new StringBuilder();
-        sb.Append("処理名,種類,分岐ルート,部署,内容,備考\r\n");
+        sb.Append("処理名,種類,分岐ルート,実施主体,内容,備考\r\n");
 
         foreach (var node in chart.Nodes.OrderBy(n => n.Number))
         {
@@ -63,7 +63,7 @@ public class FlowChartCsvExporter
             sb.Append(CsvField(displayNames[node.Id])).Append(',')
               .Append(CsvField(categories[node.Id])).Append(',')
               .Append(CsvField(route)).Append(',')
-              .Append(CsvField(string.Join("/", node.Departments))).Append(',')
+              .Append(CsvField(string.Join("/", node.Actors))).Append(',')
               .Append(CsvField(node.Text)).Append(',')
               .Append(CsvField(BuildRemarks(node))).Append("\r\n");
         }
