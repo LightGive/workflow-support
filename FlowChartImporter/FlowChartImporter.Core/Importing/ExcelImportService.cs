@@ -17,7 +17,14 @@ public class ExcelImportService
         _numberingStrategy = NodeNumberingStrategyFactory.Create(settings.NodeNumberingStrategy);
     }
 
-    public ImportResult Import(string filePath, string sheetName)
+    /// <summary>
+    /// Excelファイルを解析してフロー図を抽出する。
+    /// </summary>
+    /// <param name="minRow">
+    /// この行番号(1始まり)より上にあるシェイプ・テキストを無視する。
+    /// 既定値の1を指定した場合は何も無視しない(シート先頭から対象)。
+    /// </param>
+    public ImportResult Import(string filePath, string sheetName, int minRow = 1)
     {
         using var doc = SpreadsheetDocument.Open(filePath, isEditable: false);
         var workbookPart = doc.WorkbookPart
@@ -31,7 +38,7 @@ public class ExcelImportService
 
         // 1. 図形・コネクタを抽出
         var extractor = new ExcelShapeExtractor();
-        var (shapes, connectors, extractWarnings) = extractor.Extract(worksheetPart);
+        var (shapes, connectors, extractWarnings) = extractor.Extract(worksheetPart, minRowIndex: minRow - 1);
         allWarnings.AddRange(extractWarnings);
 
         // Line シェイプはコネクタとして扱い、ノードには含めない

@@ -22,6 +22,8 @@ const string UsageText = """
                          (省略時: JSON は出力せず、件数のみ表示)
       --csv <パス>       フロー内容を要約したCSVファイルの出力先パス
                          (省略時: CSV出力なし)
+      --min-row <行番号> この行番号(1始まり)より上にあるシェイプ・テキストを無視する
+                         (省略時: シート先頭から対象)
       --list-sheets      指定ファイルのシート一覧を表示して終了
       --help             このヘルプを表示して終了
 
@@ -65,6 +67,7 @@ string? sheetName = null;
 string? settingsPath = null;
 string? outputPath = null;
 string? csvPath = null;
+int minRow = 1;
 bool listSheets = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -79,6 +82,13 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--csv" when i + 1 < args.Length:
             csvPath = args[++i];
+            break;
+        case "--min-row" when i + 1 < args.Length:
+            if (!int.TryParse(args[++i], out minRow) || minRow < 1)
+            {
+                Console.Error.WriteLine($"エラー: --min-row には1以上の整数を指定してください: {args[i]}");
+                return 1;
+            }
             break;
         case "--list-sheets":
             listSheets = true;
@@ -142,7 +152,7 @@ if (!settingsExisted)
 try
 {
     var service = new ExcelImportService(settings);
-    var result = service.Import(filePath, sheetName);
+    var result = service.Import(filePath, sheetName, minRow);
 
     // 警告を標準エラーへ出力
     foreach (var warning in result.Warnings)

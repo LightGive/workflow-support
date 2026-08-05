@@ -25,8 +25,15 @@ internal class ExcelShapeExtractor
         public double ScaleLengthY(double h) => h * ScaleY;
     }
 
+    /// <summary>
+    /// シート内の図形・コネクタを抽出する。
+    /// </summary>
+    /// <param name="minRowIndex">
+    /// この行(0始まり)より上(小さい行)にアンカーされたシェイプ・コネクタ・グループを無視する。
+    /// 既定値の0を指定した場合は何も無視しない。
+    /// </param>
     public (List<ShapeInfo> Shapes, List<ConnectorInfo> Connectors, List<string> Warnings)
-        Extract(WorksheetPart worksheetPart)
+        Extract(WorksheetPart worksheetPart, int minRowIndex = 0)
     {
         var shapes = new List<ShapeInfo>();
         var connectors = new List<ConnectorInfo>();
@@ -49,6 +56,11 @@ internal class ExcelShapeExtractor
         {
             var (fromCol, fromColOffEmu, fromRow, fromRowOffEmu) = ReadMarker(anchor.FromMarker);
             var (toCol, toColOffEmu, toRow, toRowOffEmu) = ReadMarker(anchor.ToMarker);
+
+            if (fromRow < minRowIndex)
+            {
+                continue;
+            }
 
             // セルアンカーベースの座標(行列番号用)
             double anchorLeft = dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu);
@@ -91,6 +103,12 @@ internal class ExcelShapeExtractor
         foreach (var anchor in wsDr.Elements<OneCellAnchor>())
         {
             var (fromCol, fromColOffEmu, fromRow, fromRowOffEmu) = ReadMarker(anchor.FromMarker);
+
+            if (fromRow < minRowIndex)
+            {
+                continue;
+            }
+
             double anchorLeft = dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu);
             double anchorTop = dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu);
 
