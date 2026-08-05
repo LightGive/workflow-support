@@ -24,7 +24,11 @@ public class ExcelImportService
     /// この行番号(1始まり)より上にあるシェイプ・テキストを無視する。
     /// 既定値の1を指定した場合は何も無視しない(シート先頭から対象)。
     /// </param>
-    public ImportResult Import(string filePath, string sheetName, int minRow = 1)
+    /// <param name="ignoreActor">
+    /// 一番左(A列)の実施主体名がこの文字列と一致する行のシェイプ・テキストを無視する。
+    /// nullまたは空文字の場合は何も無視しない。
+    /// </param>
+    public ImportResult Import(string filePath, string sheetName, int minRow = 1, string? ignoreActor = null)
     {
         using var doc = SpreadsheetDocument.Open(filePath, isEditable: false);
         var workbookPart = doc.WorkbookPart
@@ -36,9 +40,19 @@ public class ExcelImportService
         var chart = new FlowChart(sheetName);
         var allWarnings = new List<string>();
 
+        // 実施主体の行範囲を先に判定し、無視対象の指定があればその行範囲を求める
+        var actorDetector = new ActorDetector();
+        var actorRanges = actorDetector.Detect(workbookPart, worksheetPart);
+        var ignoredRowRanges = string.IsNullOrEmpty(ignoreActor)
+            ? null
+            : actorRanges
+                .Where(r => r.Name.Trim() == ignoreActor.Trim())
+                .Select(r => (r.StartRow, r.EndRow))
+                .ToList();
+
         // 1. 図形・コネクタを抽出
         var extractor = new ExcelShapeExtractor();
-        var (shapes, connectors, extractWarnings) = extractor.Extract(worksheetPart, minRowIndex: minRow - 1);
+        var (shapes, connectors, extractWarnings) = extractor.Extract(worksheetPart, minRowIndex: minRow - 1, ignoredRowRanges);
         allWarnings.AddRange(extractWarnings);
 
         // Line シェイプはコネクタとして扱い、ノードには含めない
@@ -113,9 +127,6 @@ public class ExcelImportService
         }
 
         // 3. 実施主体(部署・システム・他社等)を判定
-        var actorDetector = new ActorDetector();
-        var actorRanges = actorDetector.Detect(workbookPart, worksheetPart);
-
         foreach (var (shape, node) in nodeMap)
         {
             node.Actors = actorDetector.GetActors(actorRanges, shape.AnchorFromRow, shape.AnchorToRow);

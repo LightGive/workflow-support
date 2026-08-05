@@ -19,6 +19,7 @@ internal class ExcelShapeExtractor
     private const string PresetRoundRectangle = "roundRect";
     private const string PresetFlowChartDecision = "flowChartDecision";
     private const string PresetEllipse = "ellipse";
+    private const string PresetFlowChartConnector = "flowChartConnector";
     private const string PresetFlowChartDocument = "flowChartDocument";
     private const string PresetFoldedCorner = "foldedCorner";
     private const string PresetParallelogram = "parallelogram";
@@ -54,12 +55,19 @@ internal class ExcelShapeExtractor
     /// この行(0始まり)より上(小さい行)にアンカーされたシェイプ・コネクタ・グループを無視する。
     /// 既定値の0を指定した場合は何も無視しない。
     /// </param>
+    /// <param name="ignoredRowRanges">
+    /// この行範囲(0始まり、両端含む)にアンカーされたシェイプ・コネクタ・グループを無視する。
+    /// 無視する実施主体の行範囲を指定するために使う。nullの場合は何も無視しない。
+    /// </param>
     public (List<ShapeInfo> Shapes, List<ConnectorInfo> Connectors, List<string> Warnings)
-        Extract(WorksheetPart worksheetPart, int minRowIndex = 0)
+        Extract(WorksheetPart worksheetPart, int minRowIndex = 0, IReadOnlyList<(int StartRow, int EndRow)>? ignoredRowRanges = null)
     {
         var shapes = new List<ShapeInfo>();
         var connectors = new List<ConnectorInfo>();
         var warnings = new List<string>();
+
+        bool IsIgnoredRow(int row) =>
+            row < minRowIndex || (ignoredRowRanges?.Any(r => row >= r.StartRow && row <= r.EndRow) ?? false);
 
         var drawingsPart = worksheetPart.DrawingsPart;
         if (drawingsPart == null)
@@ -79,7 +87,7 @@ internal class ExcelShapeExtractor
             var (fromCol, fromColOffEmu, fromRow, fromRowOffEmu) = ReadMarker(anchor.FromMarker);
             var (toCol, toColOffEmu, toRow, toRowOffEmu) = ReadMarker(anchor.ToMarker);
 
-            if (fromRow < minRowIndex)
+            if (IsIgnoredRow(fromRow))
             {
                 continue;
             }
@@ -126,7 +134,7 @@ internal class ExcelShapeExtractor
         {
             var (fromCol, fromColOffEmu, fromRow, fromRowOffEmu) = ReadMarker(anchor.FromMarker);
 
-            if (fromRow < minRowIndex)
+            if (IsIgnoredRow(fromRow))
             {
                 continue;
             }
@@ -451,7 +459,7 @@ internal class ExcelShapeExtractor
         PresetRectangle or PresetFlowChartProcess or PresetFlowChartAlternateProcess or PresetRoundRectangle
             => Models.ShapeType.Rectangle,
         PresetFlowChartDecision => Models.ShapeType.Diamond,
-        PresetEllipse => Models.ShapeType.Ellipse,
+        PresetEllipse or PresetFlowChartConnector => Models.ShapeType.Ellipse,
         PresetFlowChartDocument or PresetFoldedCorner => Models.ShapeType.Document,
         PresetParallelogram => Models.ShapeType.Parallelogram,
         PresetLeftBracket or PresetRightBracket => Models.ShapeType.Bracket,

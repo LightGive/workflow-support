@@ -24,6 +24,9 @@ const string UsageText = """
                          (省略時: CSV出力なし)
       --min-row <行番号> この行番号(1始まり)より上にあるシェイプ・テキストを無視する
                          (省略時: シート先頭から対象)
+      --ignore-actor <実施主体名>
+                         一番左(A列)の実施主体名がこれと一致する行のシェイプ・テキストを無視する
+                         (省略時: 無視しない)
       --list-sheets      指定ファイルのシート一覧を表示して終了
       --help             このヘルプを表示して終了
 
@@ -68,6 +71,7 @@ string? settingsPath = null;
 string? outputPath = null;
 string? csvPath = null;
 int minRow = 1;
+string? ignoreActor = null;
 bool listSheets = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -89,6 +93,9 @@ for (int i = 0; i < args.Length; i++)
                 Console.Error.WriteLine($"エラー: --min-row には1以上の整数を指定してください: {args[i]}");
                 return 1;
             }
+            break;
+        case "--ignore-actor" when i + 1 < args.Length:
+            ignoreActor = args[++i];
             break;
         case "--list-sheets":
             listSheets = true;
@@ -152,7 +159,7 @@ if (!settingsExisted)
 try
 {
     var service = new ExcelImportService(settings);
-    var result = service.Import(filePath, sheetName, minRow);
+    var result = service.Import(filePath, sheetName, minRow, ignoreActor);
 
     // 警告を標準エラーへ出力
     foreach (var warning in result.Warnings)
