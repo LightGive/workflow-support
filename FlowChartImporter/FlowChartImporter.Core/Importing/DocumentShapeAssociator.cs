@@ -6,7 +6,7 @@ namespace FlowChartImporter.Core.Importing;
 internal class DocumentShapeAssociator
 {
     /// <summary>
-    /// 書類シェイプを親ノードに紐づけ、InputFiles / OutputFiles に振り分ける。
+    /// 書類シェイプを親ノードに紐づけ、RelatedFiles に追加する。
     /// </summary>
     public void Associate(
         IEnumerable<ShapeInfo> documentShapes,
@@ -21,18 +21,7 @@ internal class DocumentShapeAssociator
                 continue;
             }
 
-            // 親ノードの中心より左→入力、右→出力
-            bool isLeft = doc.CenterX < parent.Shape.CenterX;
-            var text = doc.Text;
-
-            if (isLeft)
-            {
-                parent.Node.InputFiles.Add(text);
-            }
-            else
-            {
-                parent.Node.OutputFiles.Add(text);
-            }
+            parent.Node.RelatedFiles.Add(doc.Text);
         }
     }
 

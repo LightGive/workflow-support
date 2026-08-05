@@ -36,11 +36,8 @@ public class FlowNode
 
     public Position? Position { get; set; }
 
-    /// <summary>図形の左下に重なる書類シェイプのテキスト(入力ファイル)</summary>
-    public List<string> InputFiles { get; set; }
-
-    /// <summary>図形の右下に重なる書類シェイプのテキスト(出力ファイル)</summary>
-    public List<string> OutputFiles { get; set; }
+    /// <summary>図形に重なる書類シェイプのテキスト(関連ファイル)</summary>
+    public List<string> RelatedFiles { get; set; }
 
     /// <summary>近くにあるテキストボックス(YES/NO判定用を除く)の内容</summary>
     public List<string> Remarks { get; set; }
@@ -50,8 +47,7 @@ public class FlowNode
         Id = id;
         Text = string.Empty;
         Actors = [];
-        InputFiles = [];
-        OutputFiles = [];
+        RelatedFiles = [];
         Remarks = [];
     }
 }

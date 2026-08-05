@@ -11,7 +11,7 @@ namespace FlowChartImporter.Core.Exporting;
 /// 3列目: 開始からそのフローまでに必ず通過し、かつ通過方向が一意に定まる分岐のYES/NO一覧
 /// 4列目: 実施主体(部署・システム・他社等)
 /// 5列目: 内容(図形内テキスト)
-/// 6列目: 備考(入力/出力ファイル、近くのテキストボックスの内容)
+/// 6列目: 備考(関連ファイル、近くのテキストボックスの内容)
 /// </summary>
 public class FlowChartCsvExporter
 {
@@ -100,13 +100,9 @@ public class FlowChartCsvExporter
     private static string BuildRemarks(FlowNode node)
     {
         var lines = new List<string>();
-        if (node.InputFiles.Count > 0)
+        if (node.RelatedFiles.Count > 0)
         {
-            lines.Add("入力: " + string.Join(", ", node.InputFiles));
-        }
-        if (node.OutputFiles.Count > 0)
-        {
-            lines.Add("出力: " + string.Join(", ", node.OutputFiles));
+            lines.Add("関連ファイル: " + string.Join(", ", node.RelatedFiles));
         }
         foreach (var remark in node.Remarks)
             lines.Add("メモ: " + remark);
