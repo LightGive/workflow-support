@@ -153,7 +153,20 @@ public class ExcelImportService
         var validationWarnings = validator.Validate(chart, _settings);
         allWarnings.AddRange(validationWarnings);
 
-        return new ImportResult(chart, allWarnings);
+        // 警告は採番した番号("No.N")の昇順で表示する。番号を含まない警告は末尾にまとめる。
+        var sortedWarnings = allWarnings
+            .OrderBy(w => ExtractNodeNumber(w) ?? int.MaxValue)
+            .ToList();
+
+        return new ImportResult(chart, sortedWarnings);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex NodeNumberPattern = new(@"No\.(\d+)");
+
+    private static int? ExtractNodeNumber(string warning)
+    {
+        var match = NodeNumberPattern.Match(warning);
+        return match.Success ? int.Parse(match.Groups[1].Value) : null;
     }
 
     private static string Truncate(string text, int max = 20) =>
