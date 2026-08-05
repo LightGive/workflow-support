@@ -153,16 +153,31 @@ public class ExcelImportService
         foreach (var (fromId, toId, label, _, _, _, _, _) in connections)
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
 
-        // 6. ノード番号を採番
+        // 6. 矢印で他のノードと接続されていない孤立したシェイプは、
+        // 業務フローとして意味を持たないため出力対象(JSON/CSV)から除外する。
+        // (メモ・入出力ファイルはノードそのものではなく、既に付随情報として関連ノードに統合済みのため対象外)
+        var connectedNodeIds = chart.Edges
+            .SelectMany(e => new[] { e.FromNodeId, e.ToNodeId })
+            .ToHashSet();
+        var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
+        foreach (var node in isolatedNodes)
+            allWarnings.Add(
+                $"[孤立シェイプ除外] '{Truncate(node.Text)}' (部署: {string.Join("/", node.Departments)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
+        chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
+
+        // 7. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
 
-        // 7. 検証
+        // 8. 検証
         var validator = new FlowChartValidator();
         var validationWarnings = validator.Validate(chart, _settings);
         allWarnings.AddRange(validationWarnings);
 
         return new ImportResult(chart, allWarnings);
     }
+
+    private static string Truncate(string text, int max = 20) =>
+        text.Length <= max ? text : text[..max] + "…";
 
     /// <summary>
     /// Line シェイプの始点・終点座標を返す。
