@@ -55,20 +55,61 @@ public class ExcelImportService
         var (shapes, connectors, extractWarnings) = extractor.Extract(worksheetPart, minRowIndex: minRow - 1, ignoredRowRanges);
         allWarnings.AddRange(extractWarnings);
 
-        // Line シェイプはコネクタとして扱い、ノードには含めない
+        // 2. シェイプをノード候補・YES/NOラベル候補・備考候補等に分類し、Line シェイプをコネクタに変換
+        var (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes) = ClassifyShapes(shapes);
+        AddLineConnectors(lineShapes, connectors);
+
+        // 3. ノードを生成
+        var (xmlIdToNodeId, nodeMap) = BuildNodes(chart, nodeShapes);
+
+        // 4. 実施主体(部署・システム・他社等)を判定
+        AssignActors(nodeMap, actorDetector, actorRanges);
+
+        // 5. 書類シェイプ・備考(「[」図形)を親ノードに紐づけ
+        new DocumentShapeAssociator().Associate(documentShapes, nodeMap);
+        new RemarkAssociator().Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
+
+        // 6. コネクタをエッジに変換
+        ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes);
+
+        // 7. 矢印で他のノードと接続されていない孤立したシェイプは、
+        // 業務フローとして意味を持たないため出力対象(JSON/CSV)から除外する。
+        // (メモ・関連ファイルはノードそのものではなく、既に付随情報として関連ノードに統合済みのため対象外)
+        ExcludeIsolatedNodes(chart, allWarnings);
+
+        // 8. ノード番号を採番(矢印で接続されたノードのみが対象)
+        _numberingStrategy.AssignNumbers(chart.Nodes);
+
+        // 9. 検証
+        var validator = new FlowChartValidator();
+        allWarnings.AddRange(validator.Validate(chart, _settings));
+
+        // 警告は採番した番号("No.N")の昇順で表示する。番号を含まない警告は末尾にまとめる。
+        var sortedWarnings = allWarnings
+            .OrderBy(w => ExtractNodeNumber(w) ?? int.MaxValue)
+            .ToList();
+
+        return new ImportResult(chart, sortedWarnings);
+    }
+
+    // 矩形(Rectangle)はプロセスを表す図形だが、枠線が無い/点線のものはプロセスではなく、
+    // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
+    // テキストボックス・「[」図形はノードには含めない。YES/NOテキストは分岐のラベル判定に、
+    // 「[」図形は近くのノードの備考として使う。
+    private static (
+        List<Internal.ShapeInfo> LineShapes,
+        List<Internal.ShapeInfo> DocumentShapes,
+        List<Internal.ShapeInfo> NodeShapes,
+        List<Internal.ShapeInfo> YesNoTextBoxes,
+        List<Internal.ShapeInfo> RemarkTextBoxes
+        ) ClassifyShapes(List<Internal.ShapeInfo> shapes)
+    {
+        bool IsBorderlessRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.HasNoLine;
+        bool IsDashedRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.IsDashed;
+        bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || IsBorderlessRectangle(s);
+
         var lineShapes = shapes.Where(s => s.ShapeType == ShapeType.Line).ToList();
         var documentShapes = shapes.Where(s => s.ShapeType == ShapeType.Document).ToList();
-
-        // 矩形(Rectangle)はプロセスを表す図形だが、枠線が無いものはプロセスではなく、
-        // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
-        bool IsBorderlessRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.HasNoLine;
-
-        // 点線で囲われた矩形もプロセスとしては扱わない。
-        bool IsDashedRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.IsDashed;
-
-        // テキストボックス(Excelの「テキストボックス」挿入機能で作られた図形)はノードには含めない。
-        // YES/NOテキストは分岐のラベル判定に、それ以外は近くのノードの備考として使う。
-        bool IsYesNoLabelCandidate(Internal.ShapeInfo s) => s.IsTextBox || IsBorderlessRectangle(s);
 
         var yesNoTextBoxes = shapes
             .Where(s => IsYesNoLabelCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) != null)
@@ -86,7 +127,12 @@ public class ExcelImportService
                                         && !IsBorderlessRectangle(s)
                                         && !IsDashedRectangle(s)).ToList();
 
-        // Line シェイプを ConnectorInfo に変換してコネクタリストに追加
+        return (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes);
+    }
+
+    // Line シェイプを ConnectorInfo に変換してコネクタリストに追加する
+    private static void AddLineConnectors(List<Internal.ShapeInfo> lineShapes, List<Internal.ConnectorInfo> connectors)
+    {
         foreach (var line in lineShapes)
         {
             var (startX, startY, endX, endY) = GetLineEndpoints(line);
@@ -104,8 +150,13 @@ public class ExcelImportService
                 IsDashed = line.IsDashed,
             });
         }
+    }
 
-        // 2. ノードを生成
+    private static (
+        Dictionary<uint, string> XmlIdToNodeId,
+        List<(Internal.ShapeInfo Shape, FlowNode Node)> NodeMap
+        ) BuildNodes(FlowChart chart, List<Internal.ShapeInfo> nodeShapes)
+    {
         var xmlIdToNodeId = new Dictionary<uint, string>();
         var nodeMap = new List<(Internal.ShapeInfo Shape, FlowNode Node)>();
 
@@ -126,21 +177,28 @@ public class ExcelImportService
             nodeMap.Add((shape, node));
         }
 
-        // 3. 実施主体(部署・システム・他社等)を判定
+        return (xmlIdToNodeId, nodeMap);
+    }
+
+    private static void AssignActors(
+        List<(Internal.ShapeInfo Shape, FlowNode Node)> nodeMap,
+        ActorDetector actorDetector,
+        List<ActorDetector.ActorRange> actorRanges)
+    {
         foreach (var (shape, node) in nodeMap)
         {
             node.Actors = actorDetector.GetActors(actorRanges, shape.AnchorFromRow, shape.AnchorToRow);
         }
+    }
 
-        // 4. 書類シェイプを親ノードに紐づけ
-        var associator = new DocumentShapeAssociator();
-        associator.Associate(documentShapes, nodeMap);
-
-        // 4b. YES/NO以外のテキストボックスを最も近いノードの備考として紐づけ
-        var remarkAssociator = new RemarkAssociator();
-        remarkAssociator.Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
-
-        // 5. コネクタをエッジに変換
+    private void ResolveEdges(
+        FlowChart chart,
+        List<Internal.ConnectorInfo> connectors,
+        List<Internal.ShapeInfo> nodeShapes,
+        Dictionary<uint, string> xmlIdToNodeId,
+        List<(Internal.ShapeInfo Shape, FlowNode Node)> nodeMap,
+        List<Internal.ShapeInfo> yesNoTextBoxes)
+    {
         // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れではないため対象外とする
         var flowConnectors = connectors.Where(c => !c.IsDashed).ToList();
         var resolver = new ConnectorResolver(_settings.ConnectionTolerancePoints);
@@ -154,10 +212,10 @@ public class ExcelImportService
         int edgeSeq = 1;
         foreach (var (fromId, toId, label, _, _, _, _, _) in connections)
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
+    }
 
-        // 6. 矢印で他のノードと接続されていない孤立したシェイプは、
-        // 業務フローとして意味を持たないため出力対象(JSON/CSV)から除外する。
-        // (メモ・入出力ファイルはノードそのものではなく、既に付随情報として関連ノードに統合済みのため対象外)
+    private static void ExcludeIsolatedNodes(FlowChart chart, List<string> allWarnings)
+    {
         var connectedNodeIds = chart.Edges
             .SelectMany(e => new[] { e.FromNodeId, e.ToNodeId })
             .ToHashSet();
@@ -166,21 +224,6 @@ public class ExcelImportService
             allWarnings.Add(
                 $"[孤立シェイプ除外] '{Truncate(node.Text)}' (実施主体: {string.Join("/", node.Actors)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
-
-        // 7. ノード番号を採番(矢印で接続されたノードのみが対象)
-        _numberingStrategy.AssignNumbers(chart.Nodes);
-
-        // 8. 検証
-        var validator = new FlowChartValidator();
-        var validationWarnings = validator.Validate(chart, _settings);
-        allWarnings.AddRange(validationWarnings);
-
-        // 警告は採番した番号("No.N")の昇順で表示する。番号を含まない警告は末尾にまとめる。
-        var sortedWarnings = allWarnings
-            .OrderBy(w => ExtractNodeNumber(w) ?? int.MaxValue)
-            .ToList();
-
-        return new ImportResult(chart, sortedWarnings);
     }
 
     private static readonly System.Text.RegularExpressions.Regex NodeNumberPattern = new(@"No\.(\d+)");

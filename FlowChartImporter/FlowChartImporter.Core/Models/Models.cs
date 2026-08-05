@@ -39,7 +39,7 @@ public class FlowNode
     /// <summary>図形に重なる書類シェイプのテキスト(関連ファイル)</summary>
     public List<string> RelatedFiles { get; set; }
 
-    /// <summary>近くにあるテキストボックス(YES/NO判定用を除く)の内容</summary>
+    /// <summary>近くにある「[」(角かっこ)図形の内容</summary>
     public List<string> Remarks { get; set; }
 
     public FlowNode(string id)

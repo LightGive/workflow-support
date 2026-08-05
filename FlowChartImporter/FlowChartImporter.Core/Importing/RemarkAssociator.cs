@@ -4,7 +4,7 @@ using FlowChartImporter.Core.Models;
 namespace FlowChartImporter.Core.Importing;
 
 /// <summary>
-/// YES/NO判定用ではないテキストボックスを、最も近いノード(検索範囲内)の備考として紐づける。
+/// 「[」(角かっこ)図形を、最も近いノード(検索範囲内)の備考として紐づける。
 /// </summary>
 internal class RemarkAssociator
 {
