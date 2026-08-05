@@ -15,12 +15,12 @@ internal class ConnectorResolver
     /// コネクタをノードIDのペア(from, to)に解決する。
     /// XML明示接続を優先し、なければ座標近接判定にフォールバックする。
     /// </summary>
-    public List<(string FromNodeId, string ToNodeId)> Resolve(
+    public List<(string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY, bool IsElbow)> Resolve(
         IEnumerable<ConnectorInfo> connectors,
         IList<ShapeInfo> nodeShapes,
         IReadOnlyDictionary<uint, string> xmlIdToNodeId)
     {
-        var result = new List<(string, string)>();
+        var result = new List<(string, string, string?, double, double, double, double, bool)>();
 
         foreach (var connector in connectors)
         {
@@ -30,7 +30,10 @@ internal class ConnectorResolver
                 nodeShapes, xmlIdToNodeId);
 
             if (fromNodeId != null && toNodeId != null)
-                result.Add((fromNodeId, toNodeId));
+            {
+                result.Add((fromNodeId, toNodeId, connector.Label,
+                    connector.StartX, connector.StartY, connector.EndX, connector.EndY, connector.IsElbow));
+            }
         }
 
         return result;
@@ -43,7 +46,9 @@ internal class ConnectorResolver
     {
         // 1. XML明示接続
         if (explicitXmlId.HasValue && xmlIdToNodeId.TryGetValue(explicitXmlId.Value, out var nodeId))
+        {
             return nodeId;
+        }
 
         // 2. 座標近接判定フォールバック
         return FindNearestNode(x, y, nodeShapes, xmlIdToNodeId);
@@ -71,7 +76,10 @@ internal class ConnectorResolver
             }
         }
 
-        if (nearest == null) return null;
+        if (nearest == null)
+        {
+            return null;
+        }
         return xmlIdToNodeId.TryGetValue(nearest.XmlId, out var id) ? id : null;
     }
 }

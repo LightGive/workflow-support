@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using FlowChartImporter.Core.Exporting;
 using FlowChartImporter.Core.Importing;
 using FlowChartImporter.Core.Settings;
 
@@ -17,15 +19,43 @@ const string UsageText = """
       --settings <パス>  設定ファイルのパス
                          (省略時: 実行ファイルと同じフォルダの settings.json)
       --output <パス>    JSON 出力先ファイルのパス
-                         (省略時: 標準出力)
+                         (省略時: JSON は出力せず、件数のみ表示)
+      --csv <パス>       フロー内容を要約したCSVファイルの出力先パス
+                         (省略時: CSV出力なし)
+      --min-row <行番号> この行番号(1始まり)より上にあるシェイプ・テキストを無視する
+                         (省略時: シート先頭から対象)
+      --ignore-actor <実施主体名>
+                         一番左(A列)の実施主体名がこれと一致する行のシェイプ・テキストを無視する
+                         (省略時: 無視しない)
       --list-sheets      指定ファイルのシート一覧を表示して終了
       --help             このヘルプを表示して終了
 
     設定ファイル (settings.json) の形式:
       {
         "connectionTolerancePoints": 10.0,
-        "nodeNumberingStrategy": "default"
+        "nodeNumberingStrategy": "default",
+        "nodeNumberFormat": "A-{no}",
+        "branchLabelSearchRadiusPoints": 200.0,
+        "routeCheckStartShapeType": null,
+        "routeCheckEndShapeType": null,
+        "categoryNameStart": "開始",
+        "categoryNameEnd": "終了",
+        "categoryNameBranch": "分岐",
+        "categoryNameProcess": "処理",
+        "categoryNameCall": "呼び出し"
       }
+
+      connectionTolerancePoints      : コネクタの座標近接判定の許容誤差(ポイント単位)
+      nodeNumberingStrategy          : ノード採番戦略名("default" = 左→右、同列は上→下)
+      nodeNumberFormat               : 処理名の表示フォーマット。"{no}" が採番番号に置換される
+      branchLabelSearchRadiusPoints  : 分岐(ひし形)の近くにあるYES/NOラベルを探す範囲(ポイント単位)。
+                                        矢印自体にラベルが無い場合のみ使用。反映されない場合は広げて調整する
+      routeCheckStartShapeType /
+      routeCheckEndShapeType         : ルート完全性チェックの開始・終了シェイプタイプ(例: "ellipse")。
+                                        両方指定した場合のみ、開始から終了へ到達できるか検証する
+      categoryName*                  : CSV出力の「種類」列に使う表示名(開始/終了/分岐/処理/呼び出し)
+
+      ファイルが存在しない場合はデフォルト値で新規作成される。詳細は docs/spec.md の「6. 設定ファイル」を参照。
     """;
 
 // ── 引数パース ──────────────────────────────────────────────────
@@ -39,6 +69,9 @@ string? filePath = null;
 string? sheetName = null;
 string? settingsPath = null;
 string? outputPath = null;
+string? csvPath = null;
+int minRow = 1;
+string? ignoreActor = null;
 bool listSheets = false;
 
 for (int i = 0; i < args.Length; i++)
@@ -51,12 +84,31 @@ for (int i = 0; i < args.Length; i++)
         case "--output" when i + 1 < args.Length:
             outputPath = args[++i];
             break;
+        case "--csv" when i + 1 < args.Length:
+            csvPath = args[++i];
+            break;
+        case "--min-row" when i + 1 < args.Length:
+            if (!int.TryParse(args[++i], out minRow) || minRow < 1)
+            {
+                Console.Error.WriteLine($"エラー: --min-row には1以上の整数を指定してください: {args[i]}");
+                return 1;
+            }
+            break;
+        case "--ignore-actor" when i + 1 < args.Length:
+            ignoreActor = args[++i];
+            break;
         case "--list-sheets":
             listSheets = true;
             break;
         default:
-            if (filePath == null) filePath = args[i];
-            else if (sheetName == null) sheetName = args[i];
+            if (filePath == null)
+            {
+                filePath = args[i];
+            }
+            else if (sheetName == null)
+            {
+                sheetName = args[i];
+            }
             else
             {
                 Console.Error.WriteLine($"不明な引数: {args[i]}");
@@ -96,13 +148,18 @@ if (sheetName == null)
 
 // ── 設定ファイル読み込み ──────────────────────────────────────
 settingsPath ??= Path.Combine(AppContext.BaseDirectory, "settings.json");
+var settingsExisted = File.Exists(settingsPath);
 var settings = ImportSettingsLoader.Load(settingsPath);
+if (!settingsExisted)
+{
+    Console.Error.WriteLine($"設定ファイルが見つからなかったため、デフォルト値で新規作成しました: {settingsPath}");
+}
 
 // ── インポート実行 ────────────────────────────────────────────
 try
 {
     var service = new ExcelImportService(settings);
-    var result = service.Import(filePath, sheetName);
+    var result = service.Import(filePath, sheetName, minRow, ignoreActor);
 
     // 警告を標準エラーへ出力
     foreach (var warning in result.Warnings)
@@ -123,16 +180,29 @@ try
     {
         var outputDir = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(outputDir))
+        {
             Directory.CreateDirectory(outputDir);
+        }
 
         File.WriteAllText(outputPath, json);
         Console.Error.WriteLine($"出力完了: {outputPath}");
-        Console.Error.WriteLine($"  ノード数: {result.FlowChart.Nodes.Count}");
-        Console.Error.WriteLine($"  エッジ数: {result.FlowChart.Edges.Count}");
     }
-    else
+
+    Console.Error.WriteLine($"  ノード数: {result.FlowChart.Nodes.Count}");
+    Console.Error.WriteLine($"  エッジ数: {result.FlowChart.Edges.Count}");
+
+    // CSV 出力(フロー内容の要約)
+    if (csvPath != null)
     {
-        Console.WriteLine(json);
+        var csvDir = Path.GetDirectoryName(csvPath);
+        if (!string.IsNullOrEmpty(csvDir))
+        {
+            Directory.CreateDirectory(csvDir);
+        }
+
+        var csv = new FlowChartCsvExporter().Export(result.FlowChart, settings);
+        File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        Console.Error.WriteLine($"CSV出力完了: {csvPath}");
     }
 
     return 0;
@@ -143,7 +213,9 @@ catch (InvalidOperationException ex)
 
     // シートが見つからない場合はシート一覧を表示
     if (ex.Message.Contains("シート"))
+    {
         PrintSheetNames(filePath);
+    }
 
     return 1;
 }

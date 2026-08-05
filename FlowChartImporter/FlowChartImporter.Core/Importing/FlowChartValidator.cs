@@ -12,17 +12,15 @@ public class FlowChartValidator
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
 
         var outgoing = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
-        var incoming = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         foreach (var edge in chart.Edges)
         {
             if (outgoing.ContainsKey(edge.FromNodeId))
+            {
                 outgoing[edge.FromNodeId].Add(edge.ToNodeId);
-            if (incoming.ContainsKey(edge.ToNodeId))
-                incoming[edge.ToNodeId].Add(edge.FromNodeId);
+            }
         }
 
         CheckDuplicateEdges(chart, nodeById, warnings);
-        CheckIsolatedNodes(chart, outgoing, incoming, warnings);
 
         if (!string.IsNullOrWhiteSpace(settings.RouteCheckStartShapeType) &&
             !string.IsNullOrWhiteSpace(settings.RouteCheckEndShapeType))
@@ -52,23 +50,7 @@ public class FlowChartValidator
         }
     }
 
-    // ── 2. 孤立ノード ────────────────────────────────────────────
-    private static void CheckIsolatedNodes(
-        FlowChart chart,
-        Dictionary<string, List<string>> outgoing,
-        Dictionary<string, List<string>> incoming,
-        List<string> warnings)
-    {
-        foreach (var node in chart.Nodes)
-        {
-            bool hasOut = outgoing.TryGetValue(node.Id, out var outs) && outs.Count > 0;
-            bool hasIn = incoming.TryGetValue(node.Id, out var ins) && ins.Count > 0;
-            if (!hasOut && !hasIn)
-                warnings.Add($"[孤立ノード] {NodeInfo(node)} は矢印が1本も接続されていません。");
-        }
-    }
-
-    // ── 3. ルート完全性 ──────────────────────────────────────────
+    // ── 2. ルート完全性 ──────────────────────────────────────────
     private static void CheckRouteCompleteness(
         FlowChart chart,
         ImportSettings settings,
@@ -118,7 +100,10 @@ public class FlowChartValidator
             // 到達可能な範囲の中で行き止まりになっているノードを検出
             foreach (var nodeId in reachable)
             {
-                if (endNodeIds.Contains(nodeId)) continue;
+                if (endNodeIds.Contains(nodeId))
+                {
+                    continue;
+                }
                 if (outgoing.TryGetValue(nodeId, out var nexts) && nexts.Count == 0)
                 {
                     var node = nodeById.GetValueOrDefault(nodeId);
@@ -145,7 +130,9 @@ public class FlowChartValidator
             foreach (var next in outgoing.GetValueOrDefault(current, []))
             {
                 if (visited.Add(next))
+                {
                     queue.Enqueue(next);
+                }
             }
         }
 
@@ -155,7 +142,7 @@ public class FlowChartValidator
     private static string NodeInfo(FlowNode? node) =>
         node == null
             ? "(不明)"
-            : $"No.{node.Number} '{Truncate(node.Text)}' (部署: {node.Department}, タイプ: {node.ShapeType})";
+            : $"No.{node.Number} '{Truncate(node.Text)}' (実施主体: {string.Join("/", node.Actors)}, タイプ: {node.ShapeType})";
 
     private static string Truncate(string text, int max = 20) =>
         text.Length <= max ? text : text[..max] + "…";

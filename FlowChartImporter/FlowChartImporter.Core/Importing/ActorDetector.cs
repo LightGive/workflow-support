@@ -3,20 +3,23 @@ using DocumentFormat.OpenXml.Spreadsheet;
 
 namespace FlowChartImporter.Core.Importing;
 
-internal class DepartmentDetector
+internal class ActorDetector
 {
-    public record DepartmentRange(string Name, int StartRow, int EndRow); // 0始まり、両端含む
+    public record ActorRange(string Name, int StartRow, int EndRow); // 0始まり、両端含む
 
-    public List<DepartmentRange> Detect(WorkbookPart workbookPart, WorksheetPart worksheetPart)
+    public List<ActorRange> Detect(WorkbookPart workbookPart, WorksheetPart worksheetPart)
     {
         var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable;
         var worksheet = worksheetPart.Worksheet!;
         var sheetData = worksheet.GetFirstChild<SheetData>();
-        if (sheetData == null) return [];
+        if (sheetData == null)
+        {
+            return [];
+        }
 
         // A列の結合セル開始行 → 終了行のマップを構築
         var mergeEndByStartRow = BuildMergeMap(worksheet);
-        var result = new List<DepartmentRange>();
+        var result = new List<ActorRange>();
 
         foreach (var row in sheetData.Elements<Row>().OrderBy(r => r.RowIndex?.Value ?? 0))
         {
@@ -24,30 +27,43 @@ internal class DepartmentDetector
 
             // 既に追加済みの範囲に含まれる行はスキップ
             if (result.Any(r => r.StartRow <= rowIndex && rowIndex <= r.EndRow))
+            {
                 continue;
+            }
 
             var cellA = row.Elements<Cell>().FirstOrDefault(c => IsColumnA(c.CellReference?.Value));
-            if (cellA == null) continue;
+            if (cellA == null)
+            {
+                continue;
+            }
 
             var value = GetCellText(cellA, sharedStrings);
-            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
 
             int endRow = mergeEndByStartRow.TryGetValue(rowIndex, out var mergeEnd)
                 ? mergeEnd
                 : rowIndex;
 
-            result.Add(new DepartmentRange(value, rowIndex, endRow));
+            result.Add(new ActorRange(value, rowIndex, endRow));
         }
 
         return [.. result.OrderBy(r => r.StartRow)];
     }
 
-    public string? GetDepartment(List<DepartmentRange> ranges, int centerRow)
+    /// <summary>
+    /// 図形の行範囲(fromRow〜toRow)と重なる実施主体(部署・システム・他社等)をすべて返す(開始行順)。
+    /// 図形が複数の実施主体をまたいで配置されている場合は複数件返る。
+    /// </summary>
+    public List<string> GetActors(List<ActorRange> ranges, int fromRow, int toRow)
     {
-        // 境界値は後(下側)の部署に割り当てる
-        var matching = ranges.Where(r => r.StartRow <= centerRow && centerRow <= r.EndRow).ToList();
-        if (matching.Count == 0) return null;
-        return matching.OrderByDescending(r => r.StartRow).First().Name;
+        return ranges
+            .Where(r => r.StartRow <= toRow && fromRow <= r.EndRow)
+            .OrderBy(r => r.StartRow)
+            .Select(r => r.Name)
+            .ToList();
     }
 
     private static Dictionary<int, int> BuildMergeMap(Worksheet worksheet)
@@ -56,15 +72,24 @@ internal class DepartmentDetector
         foreach (var mc in worksheet.Descendants<MergeCell>())
         {
             var range = mc.Reference?.Value;
-            if (range == null) continue;
+            if (range == null)
+            {
+                continue;
+            }
 
             var parts = range.Split(':');
-            if (parts.Length != 2) continue;
+            if (parts.Length != 2)
+            {
+                continue;
+            }
 
             var (col1, row1) = ParseCellRef(parts[0]);
             var (_, row2) = ParseCellRef(parts[1]);
 
-            if (col1 != 0) continue; // A列のみ
+            if (col1 != 0)
+            {
+                continue; // A列のみ
+            }
             map[row1] = row2;
         }
         return map;
@@ -75,15 +100,27 @@ internal class DepartmentDetector
         if (cell.DataType?.Value == CellValues.SharedString && sharedStrings != null
             && int.TryParse(cell.CellValue?.Text, out var idx))
         {
-            return sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(idx)?.InnerText
-                   ?? string.Empty;
+            var item = sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(idx);
+            return item != null ? GetSharedStringText(item) : string.Empty;
         }
         return cell.CellValue?.Text ?? string.Empty;
     }
 
+    // SharedStringItem.InnerText はフリガナ(rPh)内のテキストも含めて連結してしまうため、
+    // 表示テキスト(t / r/t)のみを対象に組み立てる。
+    private static string GetSharedStringText(SharedStringItem item)
+    {
+        var text = string.Concat(item.Elements<Text>().Select(t => t.Text));
+        text += string.Concat(item.Elements<Run>().Select(r => r.Text?.Text ?? string.Empty));
+        return text;
+    }
+
     private static bool IsColumnA(string? cellRef)
     {
-        if (string.IsNullOrEmpty(cellRef)) return false;
+        if (string.IsNullOrEmpty(cellRef))
+        {
+            return false;
+        }
         var (col, _) = ParseCellRef(cellRef);
         return col == 0;
     }
