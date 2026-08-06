@@ -5,12 +5,14 @@ namespace FlowChartImporter.Core.Importing;
 
 /// <summary>
 /// 分岐(ひし形)ノードから出る矢印のうち、矢印自体にテキストが無いものについて、
-/// 近くにあるYES/NOテキストボックスとの角度を比較し、最も角度が小さい矢印にラベルを割り当てる。
+/// 近くにあるYES/NOテキストボックスとの角度を比較し、最も角度が小さいテキストボックスのラベルを割り当てる。
+/// 矢印ごとに独立して最も近いテキストボックスを選ぶため、YES/NOそれぞれから複数本の矢印が
+/// 出ている(分岐先が3本・2本等に分かれている)場合でも、それぞれの矢印が正しく判定される。
 /// </summary>
 internal static class BranchLabelResolver
 {
     public static void ResolveMissingLabels(
-        List<(string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY, bool IsElbow)> connections,
+        List<(string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY)> connections,
         IReadOnlyDictionary<string, ShapeInfo> nodeShapeById,
         IReadOnlyList<ShapeInfo> yesNoTextBoxes,
         double searchRadiusPoints)
@@ -30,55 +32,47 @@ internal static class BranchLabelResolver
         {
             var diamond = nodeShapeById[group.Key];
 
-            var nearbyTextBoxes = yesNoTextBoxes
+            var nearbyLabels = yesNoTextBoxes
                 .Where(tb => Distance(diamond.CenterX, diamond.CenterY, tb.CenterX, tb.CenterY) <= searchRadiusPoints)
+                .Select(tb => (Label: MatchYesNo(tb.Text), Direction: (X: tb.CenterX - diamond.CenterX, Y: tb.CenterY - diamond.CenterY)))
+                .Where(t => t.Label != null && (t.Direction.X != 0 || t.Direction.Y != 0))
                 .ToList();
 
-            foreach (var textBox in nearbyTextBoxes)
+            if (nearbyLabels.Count == 0)
             {
-                var yesNo = MatchYesNo(textBox.Text);
-                if (yesNo == null)
+                continue;
+            }
+
+            foreach (var (connection, index) in group)
+            {
+                if (connection.Label != null)
                 {
                     continue;
                 }
 
-                var toTextBox = (X: textBox.CenterX - diamond.CenterX, Y: textBox.CenterY - diamond.CenterY);
-                if (toTextBox.X == 0 && toTextBox.Y == 0)
+                var toArrowEnd = OutwardVector(diamond, connection);
+                if (toArrowEnd.X == 0 && toArrowEnd.Y == 0)
                 {
                     continue;
                 }
 
-                int? bestIndex = null;
+                string? bestLabel = null;
                 double bestAngle = double.MaxValue;
 
-                foreach (var (connection, index) in group)
+                foreach (var (label, direction) in nearbyLabels)
                 {
-                    // Label は group のスナップショット取得時点の値なので、
-                    // 同じ分岐を別のテキストボックスが先に処理して割り当て済みになっている場合があるため、
-                    // 常に connections の最新値を見て判定する(でないと後勝ちで上書きしてしまう)。
-                    if (connections[index].Label != null)
-                    {
-                        continue;
-                    }
-
-                    var toArrowEnd = OutwardVector(diamond, connection);
-                    if (toArrowEnd.X == 0 && toArrowEnd.Y == 0)
-                    {
-                        continue;
-                    }
-
-                    var angle = AngleBetween(toTextBox, toArrowEnd);
+                    var angle = AngleBetween(direction, toArrowEnd);
                     if (angle < bestAngle)
                     {
                         bestAngle = angle;
-                        bestIndex = index;
+                        bestLabel = label;
                     }
                 }
 
-                if (bestIndex != null)
+                if (bestLabel != null)
                 {
-                    var c = connections[bestIndex.Value];
-                    connections[bestIndex.Value] = (c.FromNodeId, c.ToNodeId, yesNo, c.StartX, c.StartY, c.EndX, c.EndY, c.IsElbow);
+                    connections[index] = (connection.FromNodeId, connection.ToNodeId, bestLabel,
+                        connection.StartX, connection.StartY, connection.EndX, connection.EndY);
                 }
             }
         }
@@ -102,53 +96,20 @@ internal static class BranchLabelResolver
     }
 
     // 分岐の中心から見た矢印の「外向き」方向ベクトル。
-    // 直線: 矢印の始点・終点のうち分岐から遠い方を、矢印の先(行き先方向)とみなす。
-    // カギ型接続線: 経路の途中で折れ曲がり、横に出て後ろに戻るようなケースがあるため、
-    //   遠い方の端点ではなく、分岐に近い方の端点(=最初に出た位置)がどの辺に接しているかで
-    //   最初に出た方向(上下左右いずれか)を判定する。
+    // 矢印の始点・終点のうち分岐から遠い方を、矢印の行き先方向とみなす。
+    // カギ型接続線(折れ曲がる矢印)は分岐の近くでは同じ辺から複数本が同じ方向に出て
+    // 後から分かれることが多いため、近い方の端点ではなく遠い方(=最終的な行き先)を使うことで、
+    // 同じ辺から出る複数の矢印(YESから複数本・NOから複数本 等)でも正しく区別できる。
     private static (double X, double Y) OutwardVector(
         ShapeInfo diamond,
-        (string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY, bool IsElbow) connection)
+        (string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY) connection)
     {
         var distStart = Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);
         var distEnd = Distance(diamond.CenterX, diamond.CenterY, connection.EndX, connection.EndY);
 
-        if (connection.IsElbow)
-        {
-            var (nearX, nearY) = distStart <= distEnd
-                ? (connection.StartX, connection.StartY)
-                : (connection.EndX, connection.EndY);
-            return NearestEdgeDirection(diamond, nearX, nearY);
-        }
-
         return distStart > distEnd
             ? (connection.StartX - diamond.CenterX, connection.StartY - diamond.CenterY)
             : (connection.EndX - diamond.CenterX, connection.EndY - diamond.CenterY);
-    }
-
-    // 図形のバウンディングボックスのうち、指定した点に最も近い辺の外向き方向を返す。
-    private static (double X, double Y) NearestEdgeDirection(ShapeInfo shape, double x, double y)
-    {
-        var distLeft = Math.Abs(x - shape.Left);
-        var distRight = Math.Abs(shape.Right - x);
-        var distTop = Math.Abs(y - shape.Top);
-        var distBottom = Math.Abs(shape.Bottom - y);
-
-        var min = Math.Min(Math.Min(distLeft, distRight), Math.Min(distTop, distBottom));
-
-        if (min == distLeft)
-        {
-            return (-1, 0);
-        }
-        if (min == distRight)
-        {
-            return (1, 0);
-        }
-        if (min == distTop)
-        {
-            return (0, -1);
-        }
-        return (0, 1);
     }
 
     private static double Distance(double x1, double y1, double x2, double y2)

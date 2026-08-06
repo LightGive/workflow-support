@@ -142,21 +142,23 @@ public class FlowChartCsvExporter
                 continue;
             }
 
-            // このノードに到達できる、分岐から出る矢印の行き先を求める(重複行き先は1つにまとめる)。
+            // このノードに到達できる、分岐から出る矢印のラベルを求める(重複ラベルは1つにまとめる)。
+            // 同じ方向(ラベル)の矢印が複数の行き先(直接の子ノード)経由でも到達できる場合があるため、
+            // 判定は「行き先ノード」ではなく「ラベル」の一意性で行う。
             // 分岐自身を再度通る経路(やり直しループ)は「その方向を通った」とはみなさないよう除外する。
-            var reachingTargets = outgoing[ancestorId]
+            var reachingLabels = outgoing[ancestorId]
                 .Where(e => CanReach(e.ToNodeId, nodeId, avoidId: ancestorId, successors))
-                .Select(e => e.ToNodeId)
+                .Select(e => e.Label)
                 .Distinct()
                 .ToList();
 
-            // 複数の行き先経由で到達できる場合、どちらを通ったか一意に定まらないため除外する
-            if (reachingTargets.Count != 1)
+            // 複数のラベル(方向)経由で到達できる場合、どちらを通ったか一意に定まらないため除外する
+            if (reachingLabels.Count != 1)
             {
                 continue;
             }
 
-            var label = outgoing[ancestorId].First(e => e.ToNodeId == reachingTargets[0]).Label;
+            var label = reachingLabels[0];
             parts.Add(string.IsNullOrWhiteSpace(label)
                 ? displayNames[ancestorId]
                 : $"{displayNames[ancestorId]}{label}");

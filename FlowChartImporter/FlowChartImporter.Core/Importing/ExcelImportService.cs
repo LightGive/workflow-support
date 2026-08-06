@@ -146,7 +146,6 @@ public class ExcelImportService
                 EndX = endX,
                 EndY = endY,
                 Label = string.IsNullOrWhiteSpace(line.Text) ? null : line.Text.Trim(),
-                IsElbow = line.IsElbowConnector,
                 IsDashed = line.IsDashed,
             });
         }
@@ -210,7 +209,7 @@ public class ExcelImportService
             connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints);
 
         int edgeSeq = 1;
-        foreach (var (fromId, toId, label, _, _, _, _, _) in connections)
+        foreach (var (fromId, toId, label, _, _, _, _) in connections)
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
     }
 
