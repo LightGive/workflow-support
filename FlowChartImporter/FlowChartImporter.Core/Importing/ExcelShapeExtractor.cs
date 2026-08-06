@@ -154,7 +154,9 @@ internal class ExcelShapeExtractor
 
         foreach (var sp in grpSp.Elements<DwgSheet.Shape>())
         {
-            var info = ExtractShape(sp, transform, 0, 0, fromRow, fromCol, toRow, toCol, warnings);
+            // グループ内の子図形には独自のアンカー(セル位置)が無いため、フォールバック座標は渡せない。
+            // a:xfrm が無い図形は位置不明として ExtractShape 内で除外される。
+            var info = ExtractShape(sp, transform, double.NaN, double.NaN, fromRow, fromCol, toRow, toCol, warnings);
             if (info != null)
             {
                 shapes.Add(info);
@@ -163,7 +165,7 @@ internal class ExcelShapeExtractor
 
         foreach (var cxnSp in grpSp.Elements<DwgSheet.ConnectionShape>())
         {
-            var info = ExtractConnector(cxnSp, transform, 0, 0, 0, 0);
+            var info = ExtractConnector(cxnSp, transform, double.NaN, double.NaN, double.NaN, double.NaN);
             if (info != null)
             {
                 connectors.Add(info);
@@ -224,12 +226,19 @@ internal class ExcelShapeExtractor
             flipH = xfrm.HorizontalFlip?.Value ?? false;
             flipV = xfrm.VerticalFlip?.Value ?? false;
         }
-        else
+        else if (!double.IsNaN(anchorLeft))
         {
             left = anchorLeft;
             top = anchorTop;
             width = 0;
             height = 0;
+        }
+        else
+        {
+            // a:xfrm が無く、かつ(グループ内の子図形のため)アンカーによるフォールバックも
+            // 使えない場合は、位置不明の図形として読み飛ばす。
+            warnings.Add($"位置不明のシェイプをスキップしました (name={cNvPr.Name?.Value})");
+            return null;
         }
 
         var prstGeom = sp.ShapeProperties?.GetFirstChild<PresetGeometry>();
@@ -302,9 +311,15 @@ internal class ExcelShapeExtractor
             (startX, endX) = flipH ? (right, left) : (left, right);
             (startY, endY) = flipV ? (bottom, top) : (top, bottom);
         }
-        else
+        else if (!double.IsNaN(fallbackStartX))
         {
             (startX, startY, endX, endY) = (fallbackStartX, fallbackStartY, fallbackEndX, fallbackEndY);
+        }
+        else
+        {
+            // a:xfrm が無く、かつ(グループ内の子コネクタのため)アンカーによるフォールバックも
+            // 使えない場合は、位置不明のコネクタとして読み飛ばす。
+            return null;
         }
 
         var cxnSpPr = cxnSp.NonVisualConnectionShapeProperties
