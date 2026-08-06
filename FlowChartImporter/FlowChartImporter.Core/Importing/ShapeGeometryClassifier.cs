@@ -46,10 +46,6 @@ internal static class ShapeGeometryClassifier
         _ => Models.ShapeType.Other,
     };
 
-    /// <summary>「カギ型接続線」(bentConnector2〜5)かどうか。矢印の向き判定で直線と区別するために使う</summary>
-    public static bool IsElbowConnector(string? preset) =>
-        preset is PresetBentConnector2 or PresetBentConnector3 or PresetBentConnector4 or PresetBentConnector5;
-
     // 自由図形(a:custGeom)のパスが、上下左右の中点を頂点とするひし形かどうかを判定する。
     // 「フローチャート: 判断」プリセットが custGeom に変換保存されているケースを検出するために使う。
     public static bool IsDiamondPath(CustomGeometry? custGeom)

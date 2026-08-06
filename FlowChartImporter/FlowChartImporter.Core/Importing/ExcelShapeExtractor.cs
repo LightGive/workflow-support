@@ -89,7 +89,7 @@ internal class ExcelShapeExtractor
             var cxnSp = anchor.GetFirstChild<DwgSheet.ConnectionShape>();
             if (cxnSp != null)
             {
-                var info = ExtractExplicitConnector(cxnSp, anchorLeft, anchorTop,
+                var info = ExtractConnector(cxnSp, GroupTransform.Identity, anchorLeft, anchorTop,
                     dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu),
                     dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu));
                 if (info != null)
@@ -163,7 +163,7 @@ internal class ExcelShapeExtractor
 
         foreach (var cxnSp in grpSp.Elements<DwgSheet.ConnectionShape>())
         {
-            var info = ExtractGroupedConnector(cxnSp, transform);
+            var info = ExtractConnector(cxnSp, transform, 0, 0, 0, 0);
             if (info != null)
             {
                 connectors.Add(info);
@@ -247,7 +247,6 @@ internal class ExcelShapeExtractor
         }
         var text = ExtractText(sp);
         var isTextBox = sp.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value ?? false;
-        var isElbowConnector = ShapeGeometryClassifier.IsElbowConnector(preset);
         var outline = sp.ShapeProperties?.GetFirstChild<Outline>();
         var hasNoLine = outline?.GetFirstChild<NoFill>() != null;
         var isDashed = ShapeGeometryClassifier.IsDashedLine(outline);
@@ -269,15 +268,19 @@ internal class ExcelShapeExtractor
             AnchorToRow = toRow,
             AnchorToCol = toCol,
             IsTextBox = isTextBox,
-            IsElbowConnector = isElbowConnector,
             HasNoLine = hasNoLine,
             IsDashed = isDashed,
         };
     }
 
-    private static ConnectorInfo? ExtractExplicitConnector(
-        DwgSheet.ConnectionShape cxnSp,
-        double startX, double startY, double endX, double endY)
+    // コネクタ自身の a:xfrm (off/ext) を基準座標系に変換し、その対角線を始点・終点とする。
+    // カギ型接続線は同じ接続先(stCxn)を共有する複数のコネクタでもそれぞれ経路が異なり、
+    // a:xfrm(バウンディングボックス)はコネクタごとに異なるため、複数本を正しく区別できる。
+    // (トップレベルのアンカーの from/to は複数のコネクタで共有されることがあり、区別できないため使わない)
+    // a:xfrm が無い場合のみ、呼び出し元が渡すフォールバック座標(アンカー基準)を使う。
+    private static ConnectorInfo? ExtractConnector(
+        DwgSheet.ConnectionShape cxnSp, GroupTransform transform,
+        double fallbackStartX, double fallbackStartY, double fallbackEndX, double fallbackEndY)
     {
         var cNvPr = cxnSp.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties;
         if (cNvPr?.Id?.Value == null)
@@ -285,49 +288,24 @@ internal class ExcelShapeExtractor
             return null;
         }
 
-        var cxnSpPr = cxnSp.NonVisualConnectionShapeProperties
-            ?.NonVisualConnectorShapeDrawingProperties;
-        var stCxn = cxnSpPr?.GetFirstChild<StartConnection>();
-        var endCxn = cxnSpPr?.GetFirstChild<EndConnection>();
-
-        return new ConnectorInfo
-        {
-            XmlId = cNvPr.Id.Value,
-            StartShapeXmlId = stCxn?.Id?.Value,
-            EndShapeXmlId = endCxn?.Id?.Value,
-            StartX = startX,
-            StartY = startY,
-            EndX = endX,
-            EndY = endY,
-            IsDashed = ShapeGeometryClassifier.IsDashedLine(cxnSp.ShapeProperties?.GetFirstChild<Outline>()),
-        };
-    }
-
-    // グループ内のコネクタは対象アンカーが無いため、自身の a:xfrm (off/ext) を
-    // グループ変換で絶対座標に変換し、その対角線を始点・終点とする。
-    private static ConnectorInfo? ExtractGroupedConnector(DwgSheet.ConnectionShape cxnSp, GroupTransform transform)
-    {
-        var cNvPr = cxnSp.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties;
-        if (cNvPr?.Id?.Value == null)
-        {
-            return null;
-        }
-
+        double startX, startY, endX, endY;
         var xfrm = cxnSp.ShapeProperties?.Transform2D;
-        if (xfrm?.Offset == null || xfrm.Extents == null)
+        if (xfrm?.Offset != null && xfrm.Extents != null)
         {
-            return null;
+            double left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
+            double top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
+            double right = left + transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
+            double bottom = top + transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
+
+            bool flipH = xfrm.HorizontalFlip?.Value ?? false;
+            bool flipV = xfrm.VerticalFlip?.Value ?? false;
+            (startX, endX) = flipH ? (right, left) : (left, right);
+            (startY, endY) = flipV ? (bottom, top) : (top, bottom);
         }
-
-        double left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
-        double top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
-        double right = left + transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
-        double bottom = top + transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
-
-        bool flipH = xfrm.HorizontalFlip?.Value ?? false;
-        bool flipV = xfrm.VerticalFlip?.Value ?? false;
-        double startX = flipH ? right : left, endX = flipH ? left : right;
-        double startY = flipV ? bottom : top, endY = flipV ? top : bottom;
+        else
+        {
+            (startX, startY, endX, endY) = (fallbackStartX, fallbackStartY, fallbackEndX, fallbackEndY);
+        }
 
         var cxnSpPr = cxnSp.NonVisualConnectionShapeProperties
             ?.NonVisualConnectorShapeDrawingProperties;
