@@ -100,12 +100,16 @@ internal static class BranchLabelResolver
         }
     }
 
-    /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字を区別しない)。該当しない場合はnull。</summary>
+    /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字、全角・半角を区別しない)。該当しない場合はnull。</summary>
     public static string? MatchYesNo(string text)
     {
-        // "[ No ]" や "YES]" のように、装飾のかっこ・空白が付いている場合があるため、
-        // 英字以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
-        var normalized = new string(text.Where(char.IsLetter).ToArray());
+        // "[ No ]" や "YES]"、全角の "ＹＥＳ" のように、装飾のかっこ・空白や全角表記の場合があるため、
+        // 英字(全角英字は半角に変換したうえで)以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
+        var normalized = new string(text
+            .Select(ToHalfWidthLetterOrNull)
+            .Where(c => c.HasValue)
+            .Select(c => c!.Value)
+            .ToArray());
         if (string.Equals(normalized, "YES", StringComparison.OrdinalIgnoreCase))
         {
             return "Y";
@@ -115,6 +119,16 @@ internal static class BranchLabelResolver
             return "N";
         }
         return null;
+    }
+
+    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。半角英字はそのまま、それ以外(数字・記号等)はnullを返す。
+    private static char? ToHalfWidthLetterOrNull(char c)
+    {
+        if (c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ')
+        {
+            return (char)(c - 0xFEE0);
+        }
+        return char.IsLetter(c) ? c : null;
     }
 
     // 分岐の中心から見た矢印の「外向き」方向ベクトル。
