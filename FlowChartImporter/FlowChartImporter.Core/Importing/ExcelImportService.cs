@@ -66,7 +66,7 @@ public class ExcelImportService
         AssignActors(nodeMap, actorDetector, actorRanges);
 
         // 5. 書類シェイプ・備考(「[」図形)を親ノードに紐づけ
-        new DocumentShapeAssociator().Associate(documentShapes, nodeMap);
+        new DocumentShapeAssociator().Associate(documentShapes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
         new RemarkAssociator().Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
 
         // 6. コネクタをエッジに変換
