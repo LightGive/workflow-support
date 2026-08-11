@@ -22,6 +22,24 @@ internal static class BranchLabelResolver
             return;
         }
 
+        var diamonds = nodeShapeById.Values.Where(s => s.ShapeType == ShapeType.Diamond).ToList();
+        if (diamonds.Count == 0)
+        {
+            return;
+        }
+
+        // 各YES/NOラベル図形は、探索範囲が複数の分岐と重なる場合でも「最も近い1つの分岐」にのみ属するものとして扱う。
+        // 分岐同士が近接して並ぶ図では、あるYES/NOラベルが本来属さない別の分岐の探索範囲にも入ってしまうことがあり、
+        // そのまま角度比較すると本来の持ち主より別の分岐の矢印に近い角度になって誤って割り当てられる場合があるため。
+        var textBoxesByOwnerDiamond = yesNoTextBoxes
+            .Select(tb => (TextBox: tb, Nearest: diamonds
+                .Select(d => (Diamond: d, Dist: Distance(d.CenterX, d.CenterY, tb.CenterX, tb.CenterY)))
+                .OrderBy(t => t.Dist)
+                .First()))
+            .Where(t => t.Nearest.Dist <= searchRadiusPoints)
+            .GroupBy(t => t.Nearest.Diamond, t => t.TextBox)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ShapeInfo>)g.ToList());
+
         var indexedByFromNode = connections
             .Select((connection, index) => (connection, index))
             .Where(t => nodeShapeById.TryGetValue(t.connection.FromNodeId, out var shape)
@@ -32,8 +50,12 @@ internal static class BranchLabelResolver
         {
             var diamond = nodeShapeById[group.Key];
 
-            var nearbyLabels = yesNoTextBoxes
-                .Where(tb => Distance(diamond.CenterX, diamond.CenterY, tb.CenterX, tb.CenterY) <= searchRadiusPoints)
+            if (!textBoxesByOwnerDiamond.TryGetValue(diamond, out var ownTextBoxes))
+            {
+                continue;
+            }
+
+            var nearbyLabels = ownTextBoxes
                 .Select(tb => (Label: MatchYesNo(tb.Text), Direction: (X: tb.CenterX - diamond.CenterX, Y: tb.CenterY - diamond.CenterY)))
                 .Where(t => t.Label != null && (t.Direction.X != 0 || t.Direction.Y != 0))
                 .ToList();
