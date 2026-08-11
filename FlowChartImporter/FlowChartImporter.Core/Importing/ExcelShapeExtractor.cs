@@ -69,15 +69,17 @@ internal class ExcelShapeExtractor
                 continue;
             }
 
-            // セルアンカーベースの座標(行列番号用)
+            // セルアンカーベースの座標(行列番号用、かつ図形・コネクタの正式な位置として使う)
             double anchorLeft = dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu);
             double anchorTop = dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu);
+            double anchorRight = dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu);
+            double anchorBottom = dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu);
 
             // xdr:sp (通常シェイプ)
             var sp = anchor.GetFirstChild<DwgSheet.Shape>();
             if (sp != null)
             {
-                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, fromRow, fromCol, toRow, toCol, warnings);
+                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, anchorRight, anchorBottom, fromRow, fromCol, toRow, toCol, warnings);
                 if (info != null)
                 {
                     shapes.Add(info);
@@ -89,9 +91,7 @@ internal class ExcelShapeExtractor
             var cxnSp = anchor.GetFirstChild<DwgSheet.ConnectionShape>();
             if (cxnSp != null)
             {
-                var info = ExtractConnector(cxnSp, GroupTransform.Identity, anchorLeft, anchorTop,
-                    dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu),
-                    dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu));
+                var info = ExtractConnector(cxnSp, GroupTransform.Identity, anchorLeft, anchorTop, anchorRight, anchorBottom);
                 if (info != null)
                 {
                     connectors.Add(info);
@@ -122,7 +122,9 @@ internal class ExcelShapeExtractor
             var sp = anchor.GetFirstChild<DwgSheet.Shape>();
             if (sp != null)
             {
-                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, fromRow, fromCol, fromRow, fromCol, warnings);
+                // OneCellAnchor には "to" マーカーが無く終点セルからサイズを求められないため、
+                // サイズは a:xfrm のExtentsにフォールバックする(ExtractShape内で処理)。
+                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, double.NaN, double.NaN, fromRow, fromCol, fromRow, fromCol, warnings);
                 if (info != null)
                 {
                     shapes.Add(info);
@@ -156,7 +158,7 @@ internal class ExcelShapeExtractor
         {
             // グループ内の子図形には独自のアンカー(セル位置)が無いため、フォールバック座標は渡せない。
             // a:xfrm が無い図形は位置不明として ExtractShape 内で除外される。
-            var info = ExtractShape(sp, transform, double.NaN, double.NaN, fromRow, fromCol, toRow, toCol, warnings);
+            var info = ExtractShape(sp, transform, double.NaN, double.NaN, double.NaN, double.NaN, fromRow, fromCol, toRow, toCol, warnings);
             if (info != null)
             {
                 shapes.Add(info);
@@ -201,7 +203,7 @@ internal class ExcelShapeExtractor
     private static ShapeInfo? ExtractShape(
         DwgSheet.Shape sp,
         GroupTransform transform,
-        double anchorLeft, double anchorTop,
+        double anchorLeft, double anchorTop, double anchorRight, double anchorBottom,
         int fromRow, int fromCol, int toRow, int toCol,
         List<string> warnings)
     {
@@ -212,31 +214,49 @@ internal class ExcelShapeExtractor
             return null;
         }
 
-        // a:xfrm から正確な EMU 座標を取得
         var xfrm = sp.ShapeProperties?.Transform2D;
         double left, top, width, height;
-        bool flipH = false, flipV = false;
+        bool flipH = xfrm?.HorizontalFlip?.Value ?? false;
+        bool flipV = xfrm?.VerticalFlip?.Value ?? false;
 
-        if (xfrm?.Offset != null && xfrm.Extents != null)
+        if (!double.IsNaN(anchorLeft))
         {
+            // 位置・サイズとも、セルアンカー(from/to のセル位置+列幅・行高)から求めた値を
+            // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、
+            // 手作業ではなくスクリプト等で生成されたファイルでは実際の見た目の配置と大きくズレていることがある。
+            // コネクタ(ExtractConnector)側の位置・サイズも同じセルアンカー基準に揃えており、
+            // 混在させると分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため常に同じ基準を使う。
+            left = anchorLeft;
+            top = anchorTop;
+            if (!double.IsNaN(anchorRight))
+            {
+                width = anchorRight - anchorLeft;
+                height = anchorBottom - anchorTop;
+            }
+            else if (xfrm?.Extents != null)
+            {
+                // OneCellAnchor 等、終点セルが無くサイズをアンカーから求められない場合のみ
+                // a:xfrm の Extents(サイズ)にフォールバックする。
+                width = transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
+                height = transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
+            }
+            else
+            {
+                width = 0;
+                height = 0;
+            }
+        }
+        else if (xfrm?.Offset != null && xfrm.Extents != null)
+        {
+            // グループ内の子図形など、セルアンカーが無い場合のみ a:xfrm を使う。
             left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
             top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
             width = transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
             height = transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
-            flipH = xfrm.HorizontalFlip?.Value ?? false;
-            flipV = xfrm.VerticalFlip?.Value ?? false;
-        }
-        else if (!double.IsNaN(anchorLeft))
-        {
-            left = anchorLeft;
-            top = anchorTop;
-            width = 0;
-            height = 0;
         }
         else
         {
-            // a:xfrm が無く、かつ(グループ内の子図形のため)アンカーによるフォールバックも
-            // 使えない場合は、位置不明の図形として読み飛ばす。
+            // アンカーも a:xfrm も無い場合は、位置不明の図形として読み飛ばす。
             warnings.Add($"位置不明のシェイプをスキップしました (name={cNvPr.Name?.Value})");
             return null;
         }
@@ -282,11 +302,14 @@ internal class ExcelShapeExtractor
         };
     }
 
-    // コネクタ自身の a:xfrm (off/ext) を基準座標系に変換し、その対角線を始点・終点とする。
-    // カギ型接続線は同じ接続先(stCxn)を共有する複数のコネクタでもそれぞれ経路が異なり、
-    // a:xfrm(バウンディングボックス)はコネクタごとに異なるため、複数本を正しく区別できる。
-    // (トップレベルのアンカーの from/to は複数のコネクタで共有されることがあり、区別できないため使わない)
-    // a:xfrm が無い場合のみ、呼び出し元が渡すフォールバック座標(アンカー基準)を使う。
+    // コネクタのバウンディングボックスの対角線を始点・終点とする。
+    // ボックスの位置・サイズは、そのコネクタ自身のセルアンカー(from/to)から求めた値を正式なものとして使う
+    // (a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、手作業ではなくスクリプト等で
+    // 生成されたファイルでは実際の見た目の配置と大きくズレていることがあるため)。
+    // 図形(ShapeInfo)側の位置も同じセルアンカー基準に揃えており、両者を混在させると
+    // 分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため、常に同じ基準を使う。
+    // どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
+    // グループ内の子コネクタなど、セルアンカーが無い場合のみ a:xfrm の off/ext をボックスとして使う。
     private static ConnectorInfo? ExtractConnector(
         DwgSheet.ConnectionShape cxnSp, GroupTransform transform,
         double fallbackStartX, double fallbackStartY, double fallbackEndX, double fallbackEndY)
@@ -299,26 +322,45 @@ internal class ExcelShapeExtractor
 
         double startX, startY, endX, endY;
         var xfrm = cxnSp.ShapeProperties?.Transform2D;
-        if (xfrm?.Offset != null && xfrm.Extents != null)
+        bool flipH = xfrm?.HorizontalFlip?.Value ?? false;
+        bool flipV = xfrm?.VerticalFlip?.Value ?? false;
+
+        if (!double.IsNaN(fallbackStartX))
         {
+            // セルアンカー(from/to)は、Excelが実際に画面へ描画する際の最終的な(=回転・反転が
+            // 既に反映された)見た目のバウンディングボックスを表す。そのため rot はここでは適用しない
+            // (適用すると、既に回転済みの座標をさらに回転させる二重適用になってしまう)。
+            // flipH/flipV は、そのボックスのどちらの対角がコネクタの始点・終点かを決めるためだけに使う。
+            double left = fallbackStartX, top = fallbackStartY, right = fallbackEndX, bottom = fallbackEndY;
+            (startX, endX) = flipH ? (right, left) : (left, right);
+            (startY, endY) = flipV ? (bottom, top) : (top, bottom);
+        }
+        else if (xfrm?.Offset != null && xfrm.Extents != null)
+        {
+            // a:xfrm の off/ext は、回転前(ローカル座標系)のバウンディングボックスを表す。
+            // rot(60,000分の1度単位、時計回りが正)が指定されている場合は、
+            // 反転後のボックスをその中心まわりに回転させて実際の見た目の座標を求める。
             double left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
             double top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
             double right = left + transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
             double bottom = top + transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
 
-            bool flipH = xfrm.HorizontalFlip?.Value ?? false;
-            bool flipV = xfrm.VerticalFlip?.Value ?? false;
             (startX, endX) = flipH ? (right, left) : (left, right);
             (startY, endY) = flipV ? (bottom, top) : (top, bottom);
-        }
-        else if (!double.IsNaN(fallbackStartX))
-        {
-            (startX, startY, endX, endY) = (fallbackStartX, fallbackStartY, fallbackEndX, fallbackEndY);
+
+            int rotation60000ths = xfrm.Rotation?.Value ?? 0;
+            if (rotation60000ths != 0)
+            {
+                double centerX = (left + right) / 2;
+                double centerY = (top + bottom) / 2;
+                double angleRad = rotation60000ths / 60000.0 * (Math.PI / 180.0);
+                (startX, startY) = RotatePoint(startX, startY, centerX, centerY, angleRad);
+                (endX, endY) = RotatePoint(endX, endY, centerX, centerY, angleRad);
+            }
         }
         else
         {
-            // a:xfrm が無く、かつ(グループ内の子コネクタのため)アンカーによるフォールバックも
-            // 使えない場合は、位置不明のコネクタとして読み飛ばす。
+            // アンカーも a:xfrm も無い場合は、位置不明のコネクタとして読み飛ばす。
             return null;
         }
 
@@ -338,6 +380,16 @@ internal class ExcelShapeExtractor
             EndY = endY,
             IsDashed = ShapeGeometryClassifier.IsDashedLine(cxnSp.ShapeProperties?.GetFirstChild<Outline>()),
         };
+    }
+
+    // 点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。
+    private static (double X, double Y) RotatePoint(double x, double y, double centerX, double centerY, double angleRad)
+    {
+        double dx = x - centerX;
+        double dy = y - centerY;
+        double cos = Math.Cos(angleRad);
+        double sin = Math.Sin(angleRad);
+        return (centerX + dx * cos - dy * sin, centerY + dx * sin + dy * cos);
     }
 
     private static string ExtractText(DwgSheet.Shape sp)

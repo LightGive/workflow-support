@@ -7,9 +7,13 @@ namespace FlowChartImporter.Core.Importing;
 /// </summary>
 internal class SheetDimensionMap
 {
-    // Excelデフォルト: 列幅 8.43文字幅≒64pt、行高さ 15pt
-    private const double DefaultColumnWidthPt = 64.0;
-    private const double DefaultRowHeightPt = 15.0;
+    // シートに defaultColWidth/defaultRowHeight (sheetFormatPr) の指定が無い場合のみ使うExcel既定値。
+    // 列幅 8.43文字幅≒64pt、行高さ 15pt。
+    private const double FallbackColumnWidthPt = 64.0;
+    private const double FallbackRowHeightPt = 15.0;
+
+    private readonly double _defaultColumnWidthPt;
+    private readonly double _defaultRowHeightPt;
 
     private readonly Dictionary<int, double> _colWidths = [];
     private readonly Dictionary<int, double> _rowHeights = [];
@@ -20,6 +24,14 @@ internal class SheetDimensionMap
 
     public SheetDimensionMap(Worksheet worksheet)
     {
+        var sheetFormatPr = worksheet.GetFirstChild<SheetFormatProperties>();
+        _defaultColumnWidthPt = sheetFormatPr?.DefaultColumnWidth?.Value is double w
+            ? CharacterWidthToPt(w)
+            : FallbackColumnWidthPt;
+        _defaultRowHeightPt = sheetFormatPr?.DefaultRowHeight?.Value is double h
+            ? h // sheetFormatPr の defaultRowHeight は元々ポイント単位
+            : FallbackRowHeightPt;
+
         LoadColumnWidths(worksheet);
         LoadRowHeights(worksheet);
     }
@@ -60,7 +72,7 @@ internal class SheetDimensionMap
         }
         double x = 0;
         for (int i = 0; i < colIndex; i++)
-            x += _colWidths.TryGetValue(i, out var w) ? w : DefaultColumnWidthPt;
+            x += _colWidths.TryGetValue(i, out var w) ? w : _defaultColumnWidthPt;
         _colLeftCache[colIndex] = x;
         return x;
     }
@@ -73,20 +85,32 @@ internal class SheetDimensionMap
         }
         double y = 0;
         for (int i = 0; i < rowIndex; i++)
-            y += _rowHeights.TryGetValue(i, out var h) ? h : DefaultRowHeightPt;
+            y += _rowHeights.TryGetValue(i, out var h) ? h : _defaultRowHeightPt;
         _rowTopCache[rowIndex] = y;
         return y;
     }
 
     public double GetColumnWidth(int colIndex) =>
-        _colWidths.TryGetValue(colIndex, out var w) ? w : DefaultColumnWidthPt;
+        _colWidths.TryGetValue(colIndex, out var w) ? w : _defaultColumnWidthPt;
 
     public double GetRowHeight(int rowIndex) =>
-        _rowHeights.TryGetValue(rowIndex, out var h) ? h : DefaultRowHeightPt;
+        _rowHeights.TryGetValue(rowIndex, out var h) ? h : _defaultRowHeightPt;
 
     // EMU → ポイント変換(1pt = 12700 EMU)
     public static double EmuToPt(long emu) => emu / 12700.0;
 
-    // Excelのキャラクター幅単位 → ポイント (概算: 1文字幅 ≈ 7.5pt)
-    private static double CharacterWidthToPt(double charWidth) => charWidth * 7.5;
+    // 既定フォント(Calibri 11)の最大数字幅(ピクセル)。列幅→ピクセル変換に使う。
+    private const double MaxDigitWidthPx = 7.0;
+
+    // Excelのキャラクター幅単位 → ポイント。
+    // ECMA-376 準拠の変換式(pixels = floor(((256*width + floor(128/MDW)) / 256) * MDW))で
+    // 一旦ピクセルに変換し、96DPI換算(1px = 0.75pt)でポイントに変換する。
+    // 単純な「1文字幅 ≈ 7.5pt」という概算は、特に既定幅に近い狭い列で実際の描画位置との
+    // 誤差が大きく(数十pt単位でズレる)、分岐からの角度判定(BranchLabelResolver)のような
+    // 僅かな誤差にも敏感な処理では無視できないため、より正確な式に置き換えている。
+    private static double CharacterWidthToPt(double charWidth)
+    {
+        double pixels = Math.Floor(((256 * charWidth + Math.Floor(128 / MaxDigitWidthPx)) / 256) * MaxDigitWidthPx);
+        return pixels * 0.75;
+    }
 }
