@@ -22,6 +22,24 @@ internal static class BranchLabelResolver
             return;
         }
 
+        var diamonds = nodeShapeById.Values.Where(s => s.ShapeType == ShapeType.Diamond).ToList();
+        if (diamonds.Count == 0)
+        {
+            return;
+        }
+
+        // 各YES/NOラベル図形は、探索範囲が複数の分岐と重なる場合でも「最も近い1つの分岐」にのみ属するものとして扱う。
+        // 分岐同士が近接して並ぶ図では、あるYES/NOラベルが本来属さない別の分岐の探索範囲にも入ってしまうことがあり、
+        // そのまま角度比較すると本来の持ち主より別の分岐の矢印に近い角度になって誤って割り当てられる場合があるため。
+        var textBoxesByOwnerDiamond = yesNoTextBoxes
+            .Select(tb => (TextBox: tb, Nearest: diamonds
+                .Select(d => (Diamond: d, Dist: Distance(d.CenterX, d.CenterY, tb.CenterX, tb.CenterY)))
+                .OrderBy(t => t.Dist)
+                .First()))
+            .Where(t => t.Nearest.Dist <= searchRadiusPoints)
+            .GroupBy(t => t.Nearest.Diamond, t => t.TextBox)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<ShapeInfo>)g.ToList());
+
         var indexedByFromNode = connections
             .Select((connection, index) => (connection, index))
             .Where(t => nodeShapeById.TryGetValue(t.connection.FromNodeId, out var shape)
@@ -32,8 +50,12 @@ internal static class BranchLabelResolver
         {
             var diamond = nodeShapeById[group.Key];
 
-            var nearbyLabels = yesNoTextBoxes
-                .Where(tb => Distance(diamond.CenterX, diamond.CenterY, tb.CenterX, tb.CenterY) <= searchRadiusPoints)
+            if (!textBoxesByOwnerDiamond.TryGetValue(diamond, out var ownTextBoxes))
+            {
+                continue;
+            }
+
+            var nearbyLabels = ownTextBoxes
                 .Select(tb => (Label: MatchYesNo(tb.Text), Direction: (X: tb.CenterX - diamond.CenterX, Y: tb.CenterY - diamond.CenterY)))
                 .Where(t => t.Label != null && (t.Direction.X != 0 || t.Direction.Y != 0))
                 .ToList();
@@ -78,12 +100,16 @@ internal static class BranchLabelResolver
         }
     }
 
-    /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字を区別しない)。該当しない場合はnull。</summary>
+    /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字、全角・半角を区別しない)。該当しない場合はnull。</summary>
     public static string? MatchYesNo(string text)
     {
-        // "[ No ]" や "YES]" のように、装飾のかっこ・空白が付いている場合があるため、
-        // 英字以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
-        var normalized = new string(text.Where(char.IsLetter).ToArray());
+        // "[ No ]" や "YES]"、全角の "ＹＥＳ" のように、装飾のかっこ・空白や全角表記の場合があるため、
+        // 英字(全角英字は半角に変換したうえで)以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
+        var normalized = new string(text
+            .Select(ToHalfWidthLetterOrNull)
+            .Where(c => c.HasValue)
+            .Select(c => c!.Value)
+            .ToArray());
         if (string.Equals(normalized, "YES", StringComparison.OrdinalIgnoreCase))
         {
             return "Y";
@@ -93,6 +119,16 @@ internal static class BranchLabelResolver
             return "N";
         }
         return null;
+    }
+
+    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。半角英字はそのまま、それ以外(数字・記号等)はnullを返す。
+    private static char? ToHalfWidthLetterOrNull(char c)
+    {
+        if (c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ')
+        {
+            return (char)(c - 0xFEE0);
+        }
+        return char.IsLetter(c) ? c : null;
     }
 
     // 分岐の中心から見た矢印の「外向き」方向ベクトル。

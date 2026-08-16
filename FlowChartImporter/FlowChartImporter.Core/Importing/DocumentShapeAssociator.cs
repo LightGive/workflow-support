@@ -3,6 +3,11 @@ using FlowChartImporter.Core.Models;
 
 namespace FlowChartImporter.Core.Importing;
 
+/// <summary>
+/// 書類シェイプを、最も近いノード(検索範囲内)の関連ファイルとして紐づける。
+/// (RemarkAssociator と同じ「最も近いノードを探す」方式。書類シェイプは目視ではプロセスの
+/// すぐ近くに置かれていても、バウンディングボックスが実際には重なっていないことが多いため)
+/// </summary>
 internal class DocumentShapeAssociator
 {
     /// <summary>
@@ -10,22 +15,31 @@ internal class DocumentShapeAssociator
     /// </summary>
     public void Associate(
         IEnumerable<ShapeInfo> documentShapes,
-        IList<(ShapeInfo Shape, FlowNode Node)> nodeMap)
+        IReadOnlyList<(ShapeInfo Shape, FlowNode Node)> nodeMap,
+        double searchRadiusPoints)
     {
         foreach (var doc in documentShapes)
         {
-            // バウンディングボックスが重なるノードを探す
-            var parent = nodeMap.FirstOrDefault(m => Overlaps(doc, m.Shape));
-            if (parent.Node == null)
+            FlowNode? nearestNode = null;
+            var bestDist = searchRadiusPoints;
+
+            foreach (var (shape, node) in nodeMap)
             {
-                continue;
+                var dist = Distance(doc.CenterX, doc.CenterY, shape.CenterX, shape.CenterY);
+                if (dist <= bestDist)
+                {
+                    bestDist = dist;
+                    nearestNode = node;
+                }
             }
 
-            parent.Node.RelatedFiles.Add(doc.Text);
+            nearestNode?.RelatedFiles.Add(doc.Text);
         }
     }
 
-    private static bool Overlaps(ShapeInfo a, ShapeInfo b) =>
-        a.Left < b.Right && a.Right > b.Left &&
-        a.Top < b.Bottom && a.Bottom > b.Top;
+    private static double Distance(double x1, double y1, double x2, double y2)
+    {
+        double dx = x2 - x1, dy = y2 - y1;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
 }

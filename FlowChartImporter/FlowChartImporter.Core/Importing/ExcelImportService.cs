@@ -66,7 +66,7 @@ public class ExcelImportService
         AssignActors(nodeMap, actorDetector, actorRanges);
 
         // 5. 書類シェイプ・備考(「[」図形)を親ノードに紐づけ
-        new DocumentShapeAssociator().Associate(documentShapes, nodeMap);
+        new DocumentShapeAssociator().Associate(documentShapes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
         new RemarkAssociator().Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
 
         // 6. コネクタをエッジに変換
@@ -80,7 +80,12 @@ public class ExcelImportService
         // 8. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
 
-        // 9. 検証
+        // 9. 分岐(ひし形)のYES/NOは必ず対になっているはずである。
+        // 判定の結果、片方(YESのみ/NOのみ)しか見つからない場合はその判定を信用せず、
+        // 警告したうえで分岐メモ(CSVの分岐ルート)には使わないようにする。
+        NormalizeYesNoLabelPairs(chart, allWarnings);
+
+        // 10. 検証
         var validator = new FlowChartValidator();
         allWarnings.AddRange(validator.Validate(chart, _settings));
 
@@ -223,6 +228,45 @@ public class ExcelImportService
             allWarnings.Add(
                 $"[孤立シェイプ除外] '{Truncate(node.Text)}' (実施主体: {string.Join("/", node.Actors)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
+    }
+
+    // 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
+    // (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
+    // 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
+    // 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
+    private static void NormalizeYesNoLabelPairs(FlowChart chart, List<string> warnings)
+    {
+        var nodeById = chart.Nodes.ToDictionary(n => n.Id);
+
+        var edgesByDiamond = chart.Edges
+            .Where(e => nodeById.TryGetValue(e.FromNodeId, out var n) && n.ShapeType == ShapeType.Diamond)
+            .GroupBy(e => e.FromNodeId);
+
+        foreach (var group in edgesByDiamond)
+        {
+            var diamond = nodeById[group.Key];
+            var presentLabels = group
+                .Select(e => e.Label)
+                .Where(l => l is "Y" or "N")
+                .Distinct()
+                .ToList();
+
+            if (presentLabels.Count != 1)
+            {
+                continue; // 0件(YES/NO以外のみ)、または2件(対になっている)ならそのまま
+            }
+
+            var found = presentLabels[0];
+            var foundName = found == "Y" ? "YES" : "NO";
+            var missingName = found == "Y" ? "NO" : "YES";
+            warnings.Add(
+                $"[YES/NO不整合] No.{diamond.Number} '{Truncate(diamond.Text)}' は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+
+            foreach (var edge in group.Where(e => e.Label == found))
+            {
+                edge.Label = null;
+            }
+        }
     }
 
     private static readonly System.Text.RegularExpressions.Regex NodeNumberPattern = new(@"No\.(\d+)");
