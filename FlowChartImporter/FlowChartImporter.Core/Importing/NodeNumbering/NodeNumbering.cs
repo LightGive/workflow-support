@@ -18,8 +18,8 @@ public static class NodeNumberingStrategyFactory
 }
 
 /// <summary>
-/// 図形の左上のセル位置(列番号)昇順(左→右)で採番する。同じ列(=X座標が同じとみなす)の場合は
-/// Y座標昇順(上→下)で採番する。一番左を0番とする。
+/// 図形のアンカー列番号昇順(左→右)で採番する。同じ列の場合はアンカー行番号昇順(上→下)で
+/// 採番する。一番左を0番とする。
 /// </summary>
 public class DefaultNodeNumberingStrategy : INodeNumberingStrategy
 {
@@ -28,7 +28,7 @@ public class DefaultNodeNumberingStrategy : INodeNumberingStrategy
         var ordered = nodes
             .Where(n => n.Position != null)
             .OrderBy(n => n.Position!.Column)
-            .ThenBy(n => n.Position!.Y)
+            .ThenBy(n => n.Position!.Row)
             .ToList();
 
         for (int i = 0; i < ordered.Count; i++)

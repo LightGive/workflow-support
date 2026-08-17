@@ -4,7 +4,7 @@ namespace FlowChartImporter.Core.Models;
 
 public class FlowChart
 {
-    public string SchemaVersion { get; set; } = "1.0";
+    public string SchemaVersion { get; set; } = "1.2";
 
     public string SheetName { get; set; }
 
@@ -82,18 +82,18 @@ public class Position
     /// <summary>シート上の列インデックス(1始まり)</summary>
     public int Column { get; set; }
 
-    /// <summary>ポイント単位のX座標</summary>
-    public double X { get; set; }
+    /// <summary>ポイント単位の幅</summary>
+    public double Width { get; set; }
 
-    /// <summary>ポイント単位のY座標</summary>
-    public double Y { get; set; }
+    /// <summary>ポイント単位の高さ</summary>
+    public double Height { get; set; }
 
-    public Position(int row, int column, double x, double y)
+    public Position(int row, int column, double width, double height)
     {
         Row = row;
         Column = column;
-        X = x;
-        Y = y;
+        Width = width;
+        Height = height;
     }
 }
 
