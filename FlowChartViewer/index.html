@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>FlowChart Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#f8fafc; --panel:#ffffff; --border:#e2e8f0; --text:#1e293b; --text-muted:#64748b;
+    --accent:#4f46e5; --accent-soft:#eef2ff;
+    --edge:#64748b; --edge-label-bg:#fffbeb; --edge-label-text:#92400e;
+    --rect-fill:#eef2ff; --rect-stroke:#4f46e5;
+    --diamond-fill:#fff7ed; --diamond-stroke:#d97706;
+    --doc-fill:#faf5ff; --doc-stroke:#9333ea;
+    --para-fill:#ecfeff; --para-stroke:#0891b2;
+    --start-fill:#ecfdf5; --start-stroke:#059669;
+    --end-fill:#fef2f2; --end-stroke:#dc2626;
+    --call-fill:#eff6ff; --call-stroke:#2563eb;
+    --other-fill:#f3f4f6; --other-stroke:#6b7280;
+    --shadow: 0 1px 2px rgba(15,23,42,.06), 0 1px 6px rgba(15,23,42,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --text-muted:#94a3b8;
+      --accent:#818cf8; --accent-soft:#312e81;
+      --edge:#94a3b8; --edge-label-bg:#3f2d0a; --edge-label-text:#fcd34d;
+      --rect-fill:#312e81; --rect-stroke:#818cf8;
+      --diamond-fill:#451a03; --diamond-stroke:#fb923c;
+      --doc-fill:#3b0764; --doc-stroke:#c084fc;
+      --para-fill:#083344; --para-stroke:#22d3ee;
+      --start-fill:#052e16; --start-stroke:#34d399;
+      --end-fill:#450a0a; --end-stroke:#f87171;
+      --call-fill:#172554; --call-stroke:#60a5fa;
+      --other-fill:#1e293b; --other-stroke:#94a3b8;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 1px 6px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;
+    display:flex; flex-direction:column;
+  }
+  header{
+    display:flex; align-items:center; gap:12px; padding:10px 16px;
+    background:var(--panel); border-bottom:1px solid var(--border); box-shadow:var(--shadow);
+    z-index:10;
+  }
+  header h1{font-size:15px; font-weight:600; margin:0; white-space:nowrap;}
+  header .sep{width:1px; height:22px; background:var(--border);}
+  header .meta{font-size:12.5px; color:var(--text-muted); white-space:nowrap;}
+  button, .filebtn{
+    font-size:13px; padding:6px 12px; border-radius:6px; border:1px solid var(--border);
+    background:var(--panel); color:var(--text); cursor:pointer;
+  }
+  button:hover, .filebtn:hover{border-color:var(--accent); color:var(--accent);}
+  #fileInput{display:none;}
+  .spacer{flex:1;}
+  .zoomctl{display:flex; gap:4px; align-items:center;}
+
+  main{flex:1; display:flex; min-height:0; position:relative;}
+  #canvasWrap{
+    flex:1; position:relative; overflow:hidden; cursor:grab;
+    background-image:radial-gradient(var(--border) 1px, transparent 1px);
+    background-size:22px 22px;
+  }
+  #canvasWrap.dragging{cursor:grabbing;}
+  svg#chart{width:100%; height:100%; display:block;}
+
+  #dropHint{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:14px; color:var(--text-muted); text-align:center; padding:24px;
+  }
+  #dropHint .box{
+    border:2px dashed var(--border); border-radius:12px; padding:36px 48px; background:var(--panel);
+  }
+  #dropHint strong{color:var(--text); font-size:15px;}
+  #dropHint p{margin:6px 0 0; font-size:13px; line-height:1.6;}
+
+  aside{
+    width:300px; flex:0 0 auto; border-left:1px solid var(--border); background:var(--panel);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  aside section{border-bottom:1px solid var(--border); padding:12px 14px; overflow:auto;}
+  aside h2{font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin:0 0 8px;}
+  #nodeList{flex:1; min-height:0;}
+  #nodeList ul{list-style:none; margin:0; padding:0;}
+  #nodeList li{
+    padding:6px 8px; border-radius:6px; cursor:pointer; font-size:12.5px;
+    display:flex; gap:6px; align-items:baseline;
+  }
+  #nodeList li:hover{background:var(--accent-soft);}
+  #nodeList li.selected{background:var(--accent-soft); color:var(--accent); font-weight:600;}
+  #nodeList .no{color:var(--text-muted); flex:0 0 auto;}
+  #nodeList .tx{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  #detail{font-size:12.5px; line-height:1.7;}
+  #detail .placeholder{color:var(--text-muted);}
+  #detail dt{color:var(--text-muted); margin-top:8px;}
+  #detail dt:first-child{margin-top:0;}
+  #detail dd{margin:0; word-break:break-word;}
+  .badge{
+    display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600;
+    border:1px solid currentColor;
+  }
+
+  #legend{display:flex; flex-wrap:wrap; gap:8px 14px; font-size:12px; color:var(--text-muted);}
+  #legend span{display:flex; align-items:center; gap:5px;}
+  #legend i{width:11px; height:11px; border-radius:3px; display:inline-block; border:1.5px solid;}
+
+  .node-shape{cursor:pointer;}
+  .node-label{font-size:11.5px; fill:var(--text); pointer-events:none; user-select:none;}
+  .node-number-bg{stroke:var(--panel); stroke-width:2; pointer-events:none;}
+  .node-number-text{font-size:10.5px; font-weight:700; fill:#fff; pointer-events:none; user-select:none;}
+  .node-shape:hover rect, .node-shape:hover ellipse, .node-shape:hover polygon, .node-shape:hover path.doc-shape{
+    filter:brightness(1.08);
+  }
+  .node-shape.selected > *{stroke-width:2.6;}
+  .edge-line{fill:none; stroke:var(--edge); stroke-width:1.4;}
+  .edge-hit{fill:none; stroke:transparent; stroke-width:12; cursor:pointer;}
+  .edge-hit:hover + .edge-line, .edge-line.selected{stroke:var(--accent); stroke-width:2.2;}
+  .edge-label-bg{fill:var(--edge-label-bg);}
+  .edge-label-text{fill:var(--edge-label-text); font-size:11px; font-weight:600;}
+  .lane-band{stroke:none;}
+  .lane-band.odd{fill:color-mix(in srgb, var(--border) 35%, transparent);}
+  .lane-label-bg{fill:var(--panel); stroke:var(--border); stroke-width:1;}
+  .lane-label{font-size:12px; font-weight:600; fill:var(--text-muted);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FlowChart Viewer</h1>
+  <div class="sep"></div>
+  <label class="filebtn" for="fileInput">JSONファイルを開く</label>
+  <input type="file" id="fileInput" accept=".json,application/json">
+  <div class="meta" id="metaInfo"></div>
+  <div class="spacer"></div>
+  <div class="zoomctl">
+    <button id="zoomOut" title="縮小">−</button>
+    <button id="zoomReset" title="全体表示に合わせる">100%</button>
+    <button id="zoomIn" title="拡大">+</button>
+  </div>
+</header>
+
+<main>
+  <div id="canvasWrap">
+    <svg id="chart" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--edge)"></path>
+        </marker>
+      </defs>
+      <g id="viewport">
+        <g id="lanesLayer"></g>
+        <g id="edgesLayer"></g>
+        <g id="nodesLayer"></g>
+      </g>
+    </svg>
+    <div id="dropHint">
+      <div class="box">
+        <strong>JSONファイルをドラッグ&ドロップ</strong>
+        <p>または上の「JSONファイルを開く」から選択してください。<br>
+        FlowChartImporter.Cli の <code>--output</code> で出力したJSONファイルを読み込みます。</p>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <section id="legend-section">
+      <h2>凡例</h2>
+      <div id="legend"></div>
+    </section>
+    <section id="detail-section">
+      <h2>詳細</h2>
+      <div id="detail"><p class="placeholder">図形をクリックすると詳細を表示します。</p></div>
+    </section>
+    <section id="nodeList">
+      <h2>ノード一覧 (<span id="nodeCount">0</span>)</h2>
+      <ul id="nodeListItems"></ul>
+    </section>
+  </aside>
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  const svg = document.getElementById("chart");
+  const viewport = document.getElementById("viewport");
+  const lanesLayer = document.getElementById("lanesLayer");
+  const edgesLayer = document.getElementById("edgesLayer");
+  const nodesLayer = document.getElementById("nodesLayer");
+  const canvasWrap = document.getElementById("canvasWrap");
+  const dropHint = document.getElementById("dropHint");
+  const metaInfo = document.getElementById("metaInfo");
+  const detailEl = document.getElementById("detail");
+  const nodeListItems = document.getElementById("nodeListItems");
+  const nodeCountEl = document.getElementById("nodeCount");
+  const legendEl = document.getElementById("legend");
+
+  let chart = null;          // parsed FlowChart JSON
+  let nodeById = new Map();
+  let selectedNodeEl = null, selectedEdgeEl = null;
+  let view = {x:0, y:0, scale:1};
+  let bounds = {minX:0, minY:0, maxX:0, maxY:0};
+
+  // ---------- 凡例 ----------
+  function buildLegend(){
+    const items = [
+      ["rectangle","処理 (rectangle)"],
+      ["diamond","分岐 (diamond)"],
+      ["start","開始 (ellipse・入次数0)"],
+      ["end","終了 (ellipse・出次数0)"],
+      ["call","呼び出し (ellipse)"],
+      ["document","書類 (document)"],
+      ["parallelogram","入出力 (parallelogram)"],
+      ["other","その他"],
+    ];
+    const colorFor = {
+      rectangle:["--rect-fill","--rect-stroke"], diamond:["--diamond-fill","--diamond-stroke"],
+      start:["--start-fill","--start-stroke"], end:["--end-fill","--end-stroke"],
+      call:["--call-fill","--call-stroke"], document:["--doc-fill","--doc-stroke"],
+      parallelogram:["--para-fill","--para-stroke"], other:["--other-fill","--other-stroke"],
+    };
+    legendEl.innerHTML = items.map(([key,label])=>{
+      const [f,s] = colorFor[key];
+      return `<span><i style="background:var(${f});border-color:var(${s});"></i>${label}</span>`;
+    }).join("");
+  }
+  buildLegend();
+
+  // ---------- ファイル読み込み ----------
+  document.getElementById("fileInput").addEventListener("change", e=>{
+    const f = e.target.files && e.target.files[0];
+    if (f) loadFile(f);
+  });
+  ["dragenter","dragover"].forEach(evt=>canvasWrap.addEventListener(evt, e=>{
+    e.preventDefault(); canvasWrap.classList.add("dragging");
+  }));
+  ["dragleave","drop"].forEach(evt=>canvasWrap.addEventListener(evt, e=>{
+    e.preventDefault(); canvasWrap.classList.remove("dragging");
+  }));
+  canvasWrap.addEventListener("drop", e=>{
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  function loadFile(file){
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = JSON.parse(reader.result);
+        renderChart(data);
+      }catch(err){
+        alert("JSONの解析に失敗しました: " + err.message);
+      }
+    };
+    reader.readAsText(file, "utf-8");
+  }
+
+  // ---------- 役割判定(FlowChartCsvExporter の分類ロジックに準拠) ----------
+  function classify(node, inDeg, outDeg){
+    if (node.shapeType === "diamond") return "diamond";
+    if (node.shapeType === "ellipse"){
+      if (inDeg === 0) return "start";
+      if (outDeg === 0) return "end";
+      return "call";
+    }
+    if (node.shapeType === "rectangle") return "rectangle";
+    if (node.shapeType === "document") return "document";
+    if (node.shapeType === "parallelogram") return "parallelogram";
+    return "other";
+  }
+  const ROLE_COLOR = {
+    rectangle:["--rect-fill","--rect-stroke"], diamond:["--diamond-fill","--diamond-stroke"],
+    start:["--start-fill","--start-stroke"], end:["--end-fill","--end-stroke"],
+    call:["--call-fill","--call-stroke"], document:["--doc-fill","--doc-stroke"],
+    parallelogram:["--para-fill","--para-stroke"], other:["--other-fill","--other-stroke"],
+  };
+  const ROLE_LABEL = {
+    rectangle:"処理", diamond:"分岐", start:"開始", end:"終了", call:"呼び出し",
+    document:"書類", parallelogram:"入出力", other:"その他",
+  };
+
+  // ---------- レイアウト(スイムレーン) ----------
+  // 縦: 実施主体(actors[0])ごとにレーンを分け、レーン内での上下順は元シート上の position.row
+  // (最小値)が小さいレーンほど上にする。実施主体未判定のノードは最下段の「(未分類)」レーンにまとめる。
+  // 横: 全ノードを採番番号(number)昇順に並べ、番号が小さいほど左に配置する。
+  function computeLayout(nodes){
+    const laneMap = new Map(); // key -> {name, nodes:[], minRow, isUnclassified}
+    nodes.forEach(n=>{
+      const primaryActor = (n.actors && n.actors.length > 0) ? n.actors[0] : null;
+      const key = primaryActor === null ? "__unclassified__" : primaryActor;
+      if (!laneMap.has(key)){
+        laneMap.set(key, {name: primaryActor === null ? "(未分類)" : primaryActor,
+          nodes:[], minRow:Infinity, isUnclassified: primaryActor === null});
+      }
+      const lane = laneMap.get(key);
+      lane.nodes.push(n);
+      const row = (n.position && typeof n.position.row === "number") ? n.position.row : Infinity;
+      lane.minRow = Math.min(lane.minRow, row);
+    });
+
+    const lanes = [...laneMap.values()];
+    lanes.sort((a,b)=> (a.isUnclassified !== b.isUnclassified)
+      ? (a.isUnclassified ? 1 : -1)
+      : a.minRow - b.minRow);
+
+    const laneIndexByNode = new Map();
+    lanes.forEach((lane, idx)=>lane.nodes.forEach(n=>laneIndexByNode.set(n.id, idx)));
+    return {lanes, laneIndexByNode};
+  }
+
+  const COL_SPACING = 220, LANE_HEIGHT = 150, LANE_LABEL_WIDTH = 150;
+  const SHAPE_SIZE = {
+    diamond:       {w:150, h:96},
+    ellipse:       {w:88, h:88}, // 開始/終了/呼び出し: 丸(正円)で描画するため縦横同じにする
+    parallelogram: {w:160, h:60},
+    document:      {w:160, h:64},
+  };
+  const DEFAULT_SIZE = {w:160, h:60};
+  const circleRadius = box => Math.min(box.w, box.h)/2;
+
+  // ---------- 図形ジオメトリ ----------
+  // グリッド上の位置(採番番号=横位置、レーン=縦位置)を中心として、図形種別ごとの固定サイズで
+  // ボックスを配置する(元のExcel上のサイズはスイムレーンの整列を崩すため使わない)。
+  function nodeBox(node, laneIndexByNode){
+    const size = SHAPE_SIZE[node.shapeType] || DEFAULT_SIZE;
+    const cx = (node.number||0) * COL_SPACING;
+    const cy = (laneIndexByNode.get(node.id) || 0) * LANE_HEIGHT;
+    return {x:cx-size.w/2, y:cy-size.h/2, w:size.w, h:size.h};
+  }
+  function polygonPoints(node, box){
+    const {x,y,w,h} = box;
+    switch(node.shapeType){
+      case "diamond":
+        return [[x+w/2,y],[x+w,y+h/2],[x+w/2,y+h],[x,y+h/2]];
+      case "parallelogram":
+        return [[x+w*0.18,y],[x+w,y],[x+w*0.82,y+h],[x,y+h]];
+      default:
+        return [[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
+    }
+  }
+  function documentPath(box){
+    const {x,y,w,h} = box;
+    const waveY = y + h*0.82, bottom = y + h;
+    return `M ${x} ${y} H ${x+w} V ${waveY} `+
+      `C ${x+w*0.75} ${bottom}, ${x+w*0.55} ${waveY - h*0.14}, ${x+w*0.5} ${waveY} `+
+      `C ${x+w*0.45} ${waveY + h*0.14}, ${x+w*0.25} ${bottom - h*0.14}, ${x} ${waveY} Z`;
+  }
+
+  // 中心から target 方向への、図形境界との交点を求める(矢印のクリッピング用)
+  function boundaryPoint(node, box, cx, cy, targetX, targetY){
+    const dx = targetX - cx, dy = targetY - cy;
+    if (dx === 0 && dy === 0) return {x:cx, y:cy};
+    if (node.shapeType === "ellipse"){
+      // 開始/終了/呼び出しは正円で描画しているため、円の境界との交点をそのまま使う
+      const r = circleRadius(box);
+      const theta = Math.atan2(dy, dx);
+      return {x:cx + Math.cos(theta)*r, y:cy + Math.sin(theta)*r};
+    }
+    // 多角形(矩形・ひし形・平行四辺形・書類・その他は外接矩形で近似)の辺との交差判定
+    const pts = polygonPoints(node, box);
+    let best = null, bestT = Infinity;
+    for (let i=0;i<pts.length;i++){
+      const [x1,y1] = pts[i], [x2,y2] = pts[(i+1)%pts.length];
+      const ex = x2-x1, ey = y2-y1;
+      const denom = dx*ey - dy*ex;
+      if (Math.abs(denom) < 1e-9) continue;
+      const t = ((x1-cx)*ey - (y1-cy)*ex) / denom;
+      const u = ((x1-cx)*dy - (y1-cy)*dx) / denom;
+      if (t > 1e-6 && u >= -1e-6 && u <= 1+1e-6 && t < bestT){
+        bestT = t; best = {x:cx+dx*t, y:cy+dy*t};
+      }
+    }
+    return best || {x:cx, y:cy};
+  }
+
+  // ---------- 描画 ----------
+  function renderChart(data){
+    chart = data;
+    nodeById = new Map((data.nodes||[]).map(n=>[n.id,n]));
+
+    const inDeg = new Map(), outDeg = new Map();
+    (data.nodes||[]).forEach(n=>{inDeg.set(n.id,0); outDeg.set(n.id,0);});
+    (data.edges||[]).forEach(e=>{
+      if (outDeg.has(e.from)) outDeg.set(e.from, outDeg.get(e.from)+1);
+      if (inDeg.has(e.to)) inDeg.set(e.to, inDeg.get(e.to)+1);
+    });
+
+    nodesLayer.innerHTML = "";
+    edgesLayer.innerHTML = "";
+    lanesLayer.innerHTML = "";
+    dropHint.style.display = "none";
+
+    const layout = computeLayout(data.nodes||[]);
+
+    bounds = {minX:Infinity, minY:Infinity, maxX:-Infinity, maxY:-Infinity};
+    const boxByNode = new Map();
+    (data.nodes||[]).forEach(n=>{
+      const box = nodeBox(n, layout.laneIndexByNode);
+      boxByNode.set(n.id, box);
+      bounds.minX = Math.min(bounds.minX, box.x);
+      bounds.minY = Math.min(bounds.minY, box.y);
+      bounds.maxX = Math.max(bounds.maxX, box.x+box.w);
+      bounds.maxY = Math.max(bounds.maxY, box.y+box.h);
+    });
+    if (!isFinite(bounds.minX)){ bounds = {minX:0,minY:0,maxX:400,maxY:300}; }
+
+    // ---- スイムレーン背景・ラベル(実施主体ごとの帯) ----
+    if (layout.lanes.length > 0){
+      const laneLeft = bounds.minX - LANE_LABEL_WIDTH - 20;
+      const laneRight = bounds.maxX + 30;
+      layout.lanes.forEach((lane, idx)=>{
+        const top = idx*LANE_HEIGHT - LANE_HEIGHT/2;
+        if (idx % 2 === 1){
+          const band = document.createElementNS(svg.namespaceURI, "rect");
+          band.setAttribute("x", laneLeft); band.setAttribute("y", top);
+          band.setAttribute("width", laneRight-laneLeft); band.setAttribute("height", LANE_HEIGHT);
+          band.setAttribute("class", "lane-band odd");
+          lanesLayer.appendChild(band);
+        }
+        const labelBg = document.createElementNS(svg.namespaceURI, "rect");
+        labelBg.setAttribute("x", laneLeft); labelBg.setAttribute("y", top);
+        labelBg.setAttribute("width", LANE_LABEL_WIDTH); labelBg.setAttribute("height", LANE_HEIGHT);
+        labelBg.setAttribute("class", "lane-label-bg");
+        lanesLayer.appendChild(labelBg);
+
+        const label = document.createElementNS(svg.namespaceURI, "text");
+        label.setAttribute("x", laneLeft + LANE_LABEL_WIDTH/2);
+        label.setAttribute("y", idx*LANE_HEIGHT + 4);
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("class", "lane-label");
+        label.textContent = lane.name;
+        lanesLayer.appendChild(label);
+      });
+      bounds.minX = laneLeft;
+      bounds.maxX = Math.max(bounds.maxX, laneRight);
+      bounds.minY = Math.min(bounds.minY, -LANE_HEIGHT/2);
+      bounds.maxY = Math.max(bounds.maxY, (layout.lanes.length-1)*LANE_HEIGHT + LANE_HEIGHT/2);
+    }
+
+    // ---- 辺(ノードペアが重複する場合は曲げて分離する) ----
+    const groups = new Map();
+    (data.edges||[]).forEach(e=>{
+      const key = e.from < e.to ? e.from+"|"+e.to : e.to+"|"+e.from;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    });
+
+    groups.forEach(list=>{
+      list.forEach((e, idx)=>{
+        const from = nodeById.get(e.from), to = nodeById.get(e.to);
+        if (!from || !to) return;
+        const fb = boxByNode.get(e.from), tb = boxByNode.get(e.to);
+        const fcx = fb.x+fb.w/2, fcy = fb.y+fb.h/2;
+        const tcx = tb.x+tb.w/2, tcy = tb.y+tb.h/2;
+
+        let path, midX, midY;
+        if (e.from === e.to){
+          // 自己ループ: ノード右上に小さなループを描く
+          const lx = fb.x+fb.w, ly = fb.y;
+          path = `M ${fcx} ${fcy} C ${lx+40} ${ly-10}, ${lx+40} ${ly+40}, ${fb.x+fb.w*0.7} ${fb.y}`;
+          midX = lx+30; midY = ly+5;
+        } else {
+          const offsetStep = 22;
+          const mid = list.length > 1 ? (idx - (list.length-1)/2) * offsetStep : 0;
+          const dx = tcx-fcx, dy = tcy-fcy;
+          const len = Math.hypot(dx,dy) || 1;
+          const nx = -dy/len, ny = dx/len; // 進行方向に垂直な単位ベクトル
+          const ctrlX = (fcx+tcx)/2 + nx*mid, ctrlY = (fcy+tcy)/2 + ny*mid;
+
+          const start = boundaryPoint(from, fb, fcx, fcy, ctrlX, ctrlY);
+          const end = boundaryPoint(to, tb, tcx, tcy, ctrlX, ctrlY);
+
+          if (mid === 0){
+            path = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+          } else {
+            path = `M ${start.x} ${start.y} Q ${ctrlX} ${ctrlY} ${end.x} ${end.y}`;
+          }
+          midX = ctrlX; midY = ctrlY;
+        }
+
+        const g = document.createElementNS(svg.namespaceURI, "g");
+        const hit = document.createElementNS(svg.namespaceURI, "path");
+        hit.setAttribute("d", path); hit.setAttribute("class","edge-hit");
+        const line = document.createElementNS(svg.namespaceURI, "path");
+        line.setAttribute("d", path); line.setAttribute("class","edge-line");
+        line.setAttribute("marker-end","url(#arrowhead)");
+        g.appendChild(hit); g.appendChild(line);
+
+        if (e.label){
+          const bg = document.createElementNS(svg.namespaceURI, "rect");
+          const w = 8 + e.label.length*8, h = 16;
+          bg.setAttribute("x", midX - w/2); bg.setAttribute("y", midY - h/2);
+          bg.setAttribute("width", w); bg.setAttribute("height", h);
+          bg.setAttribute("rx", 3); bg.setAttribute("class","edge-label-bg");
+          const txt = document.createElementNS(svg.namespaceURI, "text");
+          txt.setAttribute("x", midX); txt.setAttribute("y", midY+4);
+          txt.setAttribute("text-anchor","middle"); txt.setAttribute("class","edge-label-text");
+          txt.textContent = e.label;
+          g.appendChild(bg); g.appendChild(txt);
+        }
+
+        g.addEventListener("click", ev=>{ ev.stopPropagation(); selectEdge(line, e, from, to); });
+        edgesLayer.appendChild(g);
+      });
+    });
+
+    // ---- ノード ----
+    (data.nodes||[]).forEach(n=>{
+      const box = boxByNode.get(n.id);
+      const role = classify(n, inDeg.get(n.id)||0, outDeg.get(n.id)||0);
+      const [fillVar, strokeVar] = ROLE_COLOR[role] || ROLE_COLOR.other;
+
+      const g = document.createElementNS(svg.namespaceURI, "g");
+      g.setAttribute("class","node-shape");
+      g.dataset.nodeId = n.id;
+
+      let shapeEl;
+      if (n.shapeType === "ellipse"){
+        // 開始/終了/呼び出しは楕円ではなく正円で描画する
+        shapeEl = document.createElementNS(svg.namespaceURI, "circle");
+        shapeEl.setAttribute("cx", box.x+box.w/2); shapeEl.setAttribute("cy", box.y+box.h/2);
+        shapeEl.setAttribute("r", circleRadius(box));
+      } else if (n.shapeType === "document"){
+        shapeEl = document.createElementNS(svg.namespaceURI, "path");
+        shapeEl.setAttribute("d", documentPath(box));
+        shapeEl.setAttribute("class","doc-shape");
+      } else if (n.shapeType === "diamond" || n.shapeType === "parallelogram"){
+        shapeEl = document.createElementNS(svg.namespaceURI, "polygon");
+        shapeEl.setAttribute("points", polygonPoints(n, box).map(p=>p.join(",")).join(" "));
+      } else {
+        shapeEl = document.createElementNS(svg.namespaceURI, "rect");
+        shapeEl.setAttribute("x", box.x); shapeEl.setAttribute("y", box.y);
+        shapeEl.setAttribute("width", box.w); shapeEl.setAttribute("height", box.h);
+        shapeEl.setAttribute("rx", 4);
+      }
+      shapeEl.setAttribute("fill", `var(${fillVar})`);
+      shapeEl.setAttribute("stroke", `var(${strokeVar})`);
+      shapeEl.setAttribute("stroke-width", "1.6");
+      g.appendChild(shapeEl);
+
+      // ラベル(本文のみ。番号は含めない)
+      const label = document.createElementNS(svg.namespaceURI, "text");
+      label.setAttribute("class","node-label");
+      label.setAttribute("text-anchor","middle");
+      const cx = box.x+box.w/2, cy = box.y+box.h/2;
+      const lines = wrapText(n.text, box.w - 10, box.h - 8);
+      const lineH = 13.5;
+      const startY = cy - ((lines.length-1)*lineH)/2 + 4;
+      lines.forEach((ln, i)=>{
+        const tspan = document.createElementNS(svg.namespaceURI, "tspan");
+        tspan.setAttribute("x", cx); tspan.setAttribute("y", startY + i*lineH);
+        tspan.textContent = ln;
+        label.appendChild(tspan);
+      });
+      g.appendChild(label);
+
+      // 番号バッジ(本文とは別に、図形の左上に丸バッジとして表示)
+      const badgeR = 12;
+      const badge = document.createElementNS(svg.namespaceURI, "circle");
+      badge.setAttribute("cx", box.x); badge.setAttribute("cy", box.y);
+      badge.setAttribute("r", badgeR);
+      badge.setAttribute("fill", `var(${strokeVar})`);
+      badge.setAttribute("class","node-number-bg");
+      g.appendChild(badge);
+
+      const badgeText = document.createElementNS(svg.namespaceURI, "text");
+      badgeText.setAttribute("x", box.x); badgeText.setAttribute("y", box.y+4);
+      badgeText.setAttribute("text-anchor","middle");
+      badgeText.setAttribute("class","node-number-text");
+      badgeText.textContent = n.number;
+      g.appendChild(badgeText);
+
+      g.addEventListener("click", ev=>{ ev.stopPropagation(); selectNode(n, role, g); });
+      nodesLayer.appendChild(g);
+    });
+
+    buildNodeList(data.nodes||[]);
+    metaInfo.textContent = `シート: ${data.sheetName || "-"} ／ ノード ${(data.nodes||[]).length} ／ エッジ ${(data.edges||[]).length}`;
+    resetView();
+    clearSelection();
+  }
+
+  // キャンバスで文字幅を測ってテキストを折り返す(日本語は文字単位で改行)
+  const measureCanvas = document.createElement("canvas").getContext("2d");
+  function wrapText(text, maxWidth, maxHeight){
+    measureCanvas.font = "11.5px 'Segoe UI','Yu Gothic UI',sans-serif";
+    const maxLines = Math.max(1, Math.floor(maxHeight/13.5));
+    const lines = [];
+    let cur = "";
+    for (const ch of text){
+      const test = cur + ch;
+      if (measureCanvas.measureText(test).width > maxWidth && cur.length>0){
+        lines.push(cur);
+        cur = ch;
+        if (lines.length === maxLines) break;
+      } else {
+        cur = test;
+      }
+    }
+    if (lines.length < maxLines && cur) lines.push(cur);
+    if (lines.length === maxLines){
+      let last = lines[maxLines-1];
+      while (measureCanvas.measureText(last+"…").width > maxWidth && last.length>0){
+        last = last.slice(0,-1);
+      }
+      lines[maxLines-1] = last + "…";
+    }
+    return lines.length ? lines : [""];
+  }
+
+  // ---------- 選択・詳細パネル ----------
+  function clearSelection(){
+    if (selectedNodeEl) selectedNodeEl.classList.remove("selected");
+    if (selectedEdgeEl) selectedEdgeEl.classList.remove("selected");
+    selectedNodeEl = null; selectedEdgeEl = null;
+    detailEl.innerHTML = '<p class="placeholder">図形をクリックすると詳細を表示します。</p>';
+    nodeListItems.querySelectorAll("li.selected").forEach(li=>li.classList.remove("selected"));
+  }
+  svg.addEventListener("click", clearSelection);
+
+  function selectNode(n, role, g){
+    clearSelection();
+    g.classList.add("selected"); selectedNodeEl = g;
+    const li = nodeListItems.querySelector(`li[data-node-id="${cssEscape(n.id)}"]`);
+    if (li){ li.classList.add("selected"); li.scrollIntoView({block:"nearest"}); }
+
+    const actors = (n.actors||[]).join(" / ") || "(未判定)";
+    const files = (n.relatedFiles||[]).length ? n.relatedFiles.join(", ") : "(なし)";
+    const remarks = (n.remarks||[]).length ? n.remarks.join(" / ") : "(なし)";
+    detailEl.innerHTML = `
+      <dl>
+        <dt>No.</dt><dd>${n.number}</dd>
+        <dt>種類</dt><dd><span class="badge" style="color:var(${ROLE_COLOR[role][1]})">${ROLE_LABEL[role]}</span> (${n.shapeType})</dd>
+        <dt>内容</dt><dd>${escapeHtml(n.text)}</dd>
+        <dt>実施主体</dt><dd>${escapeHtml(actors)}</dd>
+        <dt>関連ファイル</dt><dd>${escapeHtml(files)}</dd>
+        <dt>備考</dt><dd>${escapeHtml(remarks)}</dd>
+      </dl>`;
+  }
+
+  function selectEdge(lineEl, e, from, to){
+    clearSelection();
+    lineEl.classList.add("selected"); selectedEdgeEl = lineEl;
+    detailEl.innerHTML = `
+      <dl>
+        <dt>接続</dt><dd>No.${from.number} 「${escapeHtml(from.text)}」 → No.${to.number} 「${escapeHtml(to.text)}」</dd>
+        <dt>ラベル</dt><dd>${e.label ? escapeHtml(e.label) : "(なし)"}</dd>
+      </dl>`;
+  }
+
+  function buildNodeList(nodes){
+    const sorted = [...nodes].sort((a,b)=>a.number-b.number);
+    nodeCountEl.textContent = sorted.length;
+    nodeListItems.innerHTML = sorted.map(n=>
+      `<li data-node-id="${escapeHtml(n.id)}"><span class="no">No.${n.number}</span><span class="tx">${escapeHtml(n.text)}</span></li>`
+    ).join("");
+    nodeListItems.querySelectorAll("li").forEach(li=>{
+      li.addEventListener("click", ()=>{
+        const n = nodeById.get(li.dataset.nodeId);
+        if (!n) return;
+        const g = nodesLayer.querySelector(`g[data-node-id="${cssEscape(n.id)}"]`);
+        if (g){ g.dispatchEvent(new MouseEvent("click", {bubbles:false})); focusOnNode(n); }
+      });
+    });
+  }
+
+  function focusOnNode(n){
+    const box = nodeBox(n);
+    const rect = canvasWrap.getBoundingClientRect();
+    view.x = (box.x+box.w/2) - (rect.width/2)/view.scale;
+    view.y = (box.y+box.h/2) - (rect.height/2)/view.scale;
+    applyView();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function cssEscape(s){ return String(s).replace(/["\\]/g, "\\$&"); }
+
+  // ---------- パン・ズーム ----------
+  function applyView(){
+    const rect = canvasWrap.getBoundingClientRect();
+    const tx = -view.x*view.scale + rect.width/2;
+    const ty = -view.y*view.scale + rect.height/2;
+    viewport.setAttribute("transform", `translate(${tx},${ty}) scale(${view.scale})`);
+  }
+
+  function resetView(){
+    const rect = canvasWrap.getBoundingClientRect();
+    const w = Math.max(1, bounds.maxX-bounds.minX), h = Math.max(1, bounds.maxY-bounds.minY);
+    const pad = 60;
+    const scale = Math.min((rect.width-pad*2)/w, (rect.height-pad*2)/h, 2.5);
+    view.scale = Math.max(scale, 0.05) || 1;
+    view.x = (bounds.minX+bounds.maxX)/2;
+    view.y = (bounds.minY+bounds.maxY)/2;
+    applyView();
+  }
+
+  document.getElementById("zoomReset").addEventListener("click", resetView);
+  document.getElementById("zoomIn").addEventListener("click", ()=>zoomBy(1.25));
+  document.getElementById("zoomOut").addEventListener("click", ()=>zoomBy(0.8));
+  function zoomBy(factor){
+    view.scale = Math.min(Math.max(view.scale*factor, 0.02), 8);
+    applyView();
+  }
+
+  canvasWrap.addEventListener("wheel", e=>{
+    if (!chart) return;
+    e.preventDefault();
+    const rect = canvasWrap.getBoundingClientRect();
+    const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    const before = screenToWorld(mx,my);
+    const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+    view.scale = Math.min(Math.max(view.scale*factor, 0.02), 8);
+    const after = screenToWorld(mx,my);
+    view.x += before.x - after.x;
+    view.y += before.y - after.y;
+    applyView();
+  }, {passive:false});
+
+  function screenToWorld(px,py){
+    const rect = canvasWrap.getBoundingClientRect();
+    return {
+      x: view.x + (px - rect.width/2)/view.scale,
+      y: view.y + (py - rect.height/2)/view.scale,
+    };
+  }
+
+  let dragging = false, dragStart = null, viewStart = null;
+  canvasWrap.addEventListener("mousedown", e=>{
+    if (e.button !== 0) return;
+    dragging = true; dragStart = {x:e.clientX,y:e.clientY}; viewStart = {x:view.x,y:view.y};
+    canvasWrap.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", e=>{
+    if (!dragging) return;
+    const dx = (e.clientX-dragStart.x)/view.scale, dy = (e.clientY-dragStart.y)/view.scale;
+    view.x = viewStart.x - dx; view.y = viewStart.y - dy;
+    applyView();
+  });
+  window.addEventListener("mouseup", ()=>{ dragging = false; canvasWrap.classList.remove("dragging"); });
+  window.addEventListener("resize", ()=>{ if (chart) applyView(); });
+
+})();
+</script>
+</body>
+</html>

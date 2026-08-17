@@ -175,8 +175,8 @@ public class ExcelImportService
                 Position = new Position(
                     row: shape.AnchorFromRow + 1,    // 1始まり
                     column: shape.AnchorFromCol + 1, // 1始まり
-                    x: shape.Left,
-                    y: shape.Top),
+                    width: shape.Width,
+                    height: shape.Height),
             };
             chart.Nodes.Add(node);
             xmlIdToNodeId[shape.XmlId] = node.Id;
