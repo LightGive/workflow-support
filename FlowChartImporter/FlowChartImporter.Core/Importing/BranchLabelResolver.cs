@@ -33,7 +33,7 @@ internal static class BranchLabelResolver
         // そのまま角度比較すると本来の持ち主より別の分岐の矢印に近い角度になって誤って割り当てられる場合があるため。
         var textBoxesByOwnerDiamond = yesNoTextBoxes
             .Select(tb => (TextBox: tb, Nearest: diamonds
-                .Select(d => (Diamond: d, Dist: Distance(d.CenterX, d.CenterY, tb.CenterX, tb.CenterY)))
+                .Select(d => (Diamond: d, Dist: GeometryUtils.Distance(d.CenterX, d.CenterY, tb.CenterX, tb.CenterY)))
                 .OrderBy(t => t.Dist)
                 .First()))
             .Where(t => t.Nearest.Dist <= searchRadiusPoints)
@@ -140,18 +140,12 @@ internal static class BranchLabelResolver
         ShapeInfo diamond,
         (string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY) connection)
     {
-        var distStart = Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);
-        var distEnd = Distance(diamond.CenterX, diamond.CenterY, connection.EndX, connection.EndY);
+        var distStart = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);
+        var distEnd = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.EndX, connection.EndY);
 
         return distStart > distEnd
             ? (connection.StartX - diamond.CenterX, connection.StartY - diamond.CenterY)
             : (connection.EndX - diamond.CenterX, connection.EndY - diamond.CenterY);
-    }
-
-    private static double Distance(double x1, double y1, double x2, double y2)
-    {
-        double dx = x2 - x1, dy = y2 - y1;
-        return Math.Sqrt(dx * dx + dy * dy);
     }
 
     private static double AngleBetween((double X, double Y) a, (double X, double Y) b)
