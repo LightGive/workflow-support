@@ -26,7 +26,7 @@ internal static class DominatorTree
         var reversePostorder = Enumerable.Reverse(postorder).ToList();
 
         var predecessors = new Dictionary<string, List<string>>();
-        foreach (var (from, tos) in successors)
+        foreach (var (from, tos) in successors) 
         {
             foreach (var to in tos)
             {
