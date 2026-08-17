@@ -10,8 +10,6 @@ namespace FlowChartImporter.Core.Importing;
 
 internal class ExcelShapeExtractor
 {
-    private const double EmuToPt = 1.0 / 12700.0;
-
     // グループ図形(xdr:grpSp)内の子図形の座標系(EMU、子座標系原点基準)を
     // ワークシート上の絶対座標系(EMU)に変換するアフィン変換。
     // グループに属さない図形は Identity (変換なし) を使う。
@@ -237,8 +235,8 @@ internal class ExcelShapeExtractor
             {
                 // OneCellAnchor 等、終点セルが無くサイズをアンカーから求められない場合のみ
                 // a:xfrm の Extents(サイズ)にフォールバックする。
-                width = transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
-                height = transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
+                width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+                height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
             }
             else
             {
@@ -249,10 +247,10 @@ internal class ExcelShapeExtractor
         else if (xfrm?.Offset != null && xfrm.Extents != null)
         {
             // グループ内の子図形など、セルアンカーが無い場合のみ a:xfrm を使う。
-            left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
-            top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
-            width = transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
-            height = transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
+            left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
+            top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
+            width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+            height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
         }
         else
         {
@@ -340,10 +338,10 @@ internal class ExcelShapeExtractor
             // a:xfrm の off/ext は、回転前(ローカル座標系)のバウンディングボックスを表す。
             // rot(60,000分の1度単位、時計回りが正)が指定されている場合は、
             // 反転後のボックスをその中心まわりに回転させて実際の見た目の座標を求める。
-            double left = transform.TransformX(xfrm.Offset.X?.Value ?? 0) * EmuToPt;
-            double top = transform.TransformY(xfrm.Offset.Y?.Value ?? 0) * EmuToPt;
-            double right = left + transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0) * EmuToPt;
-            double bottom = top + transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0) * EmuToPt;
+            double left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
+            double top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
+            double right = left + SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+            double bottom = top + SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
 
             (startX, endX) = flipH ? (right, left) : (left, right);
             (startY, endY) = flipV ? (bottom, top) : (top, bottom);

@@ -98,6 +98,7 @@ internal class SheetDimensionMap
 
     // EMU → ポイント変換(1pt = 12700 EMU)
     public static double EmuToPt(long emu) => emu / 12700.0;
+    public static double EmuToPt(double emu) => emu / 12700.0;
 
     // 既定フォント(Calibri 11)の最大数字幅(ピクセル)。列幅→ピクセル変換に使う。
     private const double MaxDigitWidthPx = 7.0;

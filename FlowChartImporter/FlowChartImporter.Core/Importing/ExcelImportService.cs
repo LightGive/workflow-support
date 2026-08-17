@@ -66,8 +66,10 @@ public class ExcelImportService
         AssignActors(nodeMap, actorDetector, actorRanges);
 
         // 5. 書類シェイプ・備考(「[」図形)を親ノードに紐づけ
-        new DocumentShapeAssociator().Associate(documentShapes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
-        new RemarkAssociator().Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints);
+        NearestNodeAssociator.Associate(documentShapes, nodeMap, _settings.BranchLabelSearchRadiusPoints,
+            selectValue: s => s.Text, addValue: (node, text) => node.RelatedFiles.Add(text));
+        NearestNodeAssociator.Associate(remarkTextBoxes, nodeMap, _settings.BranchLabelSearchRadiusPoints,
+            selectValue: s => s.Text.Trim(), addValue: (node, text) => node.Remarks.Add(text));
 
         // 6. コネクタをエッジに変換
         ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes);
@@ -226,7 +228,7 @@ public class ExcelImportService
         var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
         foreach (var node in isolatedNodes)
             allWarnings.Add(
-                $"[孤立シェイプ除外] '{Truncate(node.Text)}' (実施主体: {string.Join("/", node.Actors)}, タイプ: {node.ShapeType}) は矢印が1本も接続されていないため出力対象から除外しました。");
+                $"[孤立シェイプ除外] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
     }
 
@@ -260,7 +262,7 @@ public class ExcelImportService
             var foundName = found == "Y" ? "YES" : "NO";
             var missingName = found == "Y" ? "NO" : "YES";
             warnings.Add(
-                $"[YES/NO不整合] No.{diamond.Number} '{Truncate(diamond.Text)}' は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+                $"[YES/NO不整合] {WarningFormatting.DescribeNode(diamond)} は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
 
             foreach (var edge in group.Where(e => e.Label == found))
             {
@@ -276,9 +278,6 @@ public class ExcelImportService
         var match = NodeNumberPattern.Match(warning);
         return match.Success ? int.Parse(match.Groups[1].Value) : null;
     }
-
-    private static string Truncate(string text, int max = 20) =>
-        text.Length <= max ? text : text[..max] + "…";
 
     /// <summary>
     /// Line シェイプの始点・終点座標を返す。
