@@ -219,11 +219,9 @@ internal class ExcelShapeExtractor
 
         if (!double.IsNaN(anchorLeft))
         {
-            // 位置・サイズとも、セルアンカー(from/to のセル位置+列幅・行高)から求めた値を
-            // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、
-            // 手作業ではなくスクリプト等で生成されたファイルでは実際の見た目の配置と大きくズレていることがある。
-            // コネクタ(ExtractConnector)側の位置・サイズも同じセルアンカー基準に揃えており、
-            // 混在させると分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため常に同じ基準を使う。
+            // 位置・サイズは、セルアンカー(from/to のセル位置+列幅・行高)から求めた値を正式なものとして使う。
+            // a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることがあるため使わない
+            // (ExtractConnector側の位置・サイズも同じセルアンカー基準に揃えている)。
             left = anchorLeft;
             top = anchorTop;
             if (!double.IsNaN(anchorRight))
@@ -300,12 +298,8 @@ internal class ExcelShapeExtractor
         };
     }
 
-    // コネクタのバウンディングボックスの対角線を始点・終点とする。
-    // ボックスの位置・サイズは、そのコネクタ自身のセルアンカー(from/to)から求めた値を正式なものとして使う
-    // (a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、手作業ではなくスクリプト等で
-    // 生成されたファイルでは実際の見た目の配置と大きくズレていることがあるため)。
-    // 図形(ShapeInfo)側の位置も同じセルアンカー基準に揃えており、両者を混在させると
-    // 分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため、常に同じ基準を使う。
+    // コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
+    // ExtractShapeと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
     // どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
     // グループ内の子コネクタなど、セルアンカーが無い場合のみ a:xfrm の off/ext をボックスとして使う。
     private static ConnectorInfo? ExtractConnector(
@@ -325,10 +319,8 @@ internal class ExcelShapeExtractor
 
         if (!double.IsNaN(fallbackStartX))
         {
-            // セルアンカー(from/to)は、Excelが実際に画面へ描画する際の最終的な(=回転・反転が
-            // 既に反映された)見た目のバウンディングボックスを表す。そのため rot はここでは適用しない
-            // (適用すると、既に回転済みの座標をさらに回転させる二重適用になってしまう)。
-            // flipH/flipV は、そのボックスのどちらの対角がコネクタの始点・終点かを決めるためだけに使う。
+            // セルアンカーは回転・反転が既に反映された見た目のボックスを表すため、rot は適用しない
+            // (適用すると回転済み座標を二重に回転させてしまう)。flipH/flipV は始点・終点の対角を決めるだけに使う。
             double left = fallbackStartX, top = fallbackStartY, right = fallbackEndX, bottom = fallbackEndY;
             (startX, endX) = flipH ? (right, left) : (left, right);
             (startY, endY) = flipV ? (bottom, top) : (top, bottom);

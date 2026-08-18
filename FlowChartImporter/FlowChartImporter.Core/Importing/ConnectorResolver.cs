@@ -46,12 +46,10 @@ internal class ConnectorResolver
         return result;
     }
 
-    // XML上で明示的な接続先シェイプ・接続サイト番号(a:stCxn/a:endCxnのidx。基本図形では
-    // 0=上辺中点, 1=右辺中点, 2=下辺中点, 3=左辺中点)が判明している場合、コネクタのバウンディング
-    // ボックスの対角線から求めた近似座標ではなく、接続先シェイプの実際の接続サイト座標を使う。
-    // バウンディングボックスの対角線を使う近似は、カギ型接続線が大きく迂回する経路の場合に、
-    // シェイプへの実際の接続位置から離れてしまうことがある(同じ接続サイトから出る複数の矢印の
-    // 起点が、それぞれ違う座標として計算されてしまう)ため。
+    // 接続先シェイプ・接続サイト番号(a:stCxn/a:endCxnのidx。基本図形では
+    // 0=上辺中点, 1=右辺中点, 2=下辺中点, 3=左辺中点)が判明している場合は、コネクタの
+    // バウンディングボックス対角線からの近似座標ではなく、実際の接続サイト座標を使う
+    // (対角線での近似は、カギ型接続線が迂回する経路だと実際の接続位置からズレるため)。
     private static (double X, double Y) RefineEndpoint(
         uint? shapeXmlId, uint? siteIndex, double fallbackX, double fallbackY,
         IReadOnlyDictionary<uint, ShapeInfo> shapeByXmlId)
