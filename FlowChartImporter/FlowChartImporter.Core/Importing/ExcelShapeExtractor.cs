@@ -372,6 +372,8 @@ internal class ExcelShapeExtractor
             XmlId = cNvPr.Id.Value,
             StartShapeXmlId = stCxn?.Id?.Value,
             EndShapeXmlId = endCxn?.Id?.Value,
+            StartConnectionSiteIndex = stCxn?.Index?.Value,
+            EndConnectionSiteIndex = endCxn?.Index?.Value,
             StartX = startX,
             StartY = startY,
             EndX = endX,
