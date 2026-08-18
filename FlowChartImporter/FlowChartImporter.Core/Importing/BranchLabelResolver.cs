@@ -17,7 +17,7 @@ namespace FlowChartImporter.Core.Importing;
 internal static class BranchLabelResolver
 {
     public static void ResolveMissingLabels(
-        List<(string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY)> connections,
+        List<ResolvedConnection> connections,
         IReadOnlyDictionary<string, ShapeInfo> nodeShapeById,
         IReadOnlyList<ShapeInfo> yesNoTextBoxes,
         double searchRadiusPoints)
@@ -116,9 +116,7 @@ internal static class BranchLabelResolver
 
             foreach (var (index, label) in assigned)
             {
-                var connection = connections[index];
-                connections[index] = (connection.FromNodeId, connection.ToNodeId, label,
-                    connection.StartX, connection.StartY, connection.EndX, connection.EndY);
+                connections[index] = connections[index] with { Label = label };
             }
         }
     }
@@ -156,9 +154,7 @@ internal static class BranchLabelResolver
 
     // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
     // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
-    private static (double X, double Y) ConnectorOrigin(
-        ShapeInfo diamond,
-        (string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY) connection)
+    private static (double X, double Y) ConnectorOrigin(ShapeInfo diamond, ResolvedConnection connection)
     {
         var distStart = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);
         var distEnd = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.EndX, connection.EndY);

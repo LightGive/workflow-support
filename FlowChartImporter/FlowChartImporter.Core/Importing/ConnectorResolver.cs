@@ -15,12 +15,12 @@ internal class ConnectorResolver
     /// コネクタをノードIDのペア(from, to)に解決する。
     /// XML明示接続を優先し、なければ座標近接判定にフォールバックする。
     /// </summary>
-    public List<(string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY)> Resolve(
+    public List<ResolvedConnection> Resolve(
         IEnumerable<ConnectorInfo> connectors,
         IList<ShapeInfo> nodeShapes,
         IReadOnlyDictionary<uint, string> xmlIdToNodeId)
     {
-        var result = new List<(string, string, string?, double, double, double, double)>();
+        var result = new List<ResolvedConnection>();
         var shapeByXmlId = nodeShapes.ToDictionary(s => s.XmlId);
 
         foreach (var connector in connectors)
@@ -39,7 +39,7 @@ internal class ConnectorResolver
                     connector.EndShapeXmlId, connector.EndConnectionSiteIndex,
                     connector.EndX, connector.EndY, shapeByXmlId);
 
-                result.Add((fromNodeId, toNodeId, connector.Label, startX, startY, endX, endY));
+                result.Add(new ResolvedConnection(fromNodeId, toNodeId, connector.Label, startX, startY, endX, endY));
             }
         }
 
