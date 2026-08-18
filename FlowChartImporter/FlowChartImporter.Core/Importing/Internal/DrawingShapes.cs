@@ -47,6 +47,11 @@ internal class ConnectorInfo
     public uint? StartShapeXmlId { get; init; }
     public uint? EndShapeXmlId { get; init; }
 
+    // 接続先シェイプ上の接続サイト番号(a:stCxn/a:endCxnのidx属性。null = XMLに記載なし)。
+    // 基本図形(矩形・ひし形・楕円等)では 0=上辺中点, 1=右辺中点, 2=下辺中点, 3=左辺中点 を指す。
+    public uint? StartConnectionSiteIndex { get; init; }
+    public uint? EndConnectionSiteIndex { get; init; }
+
     // 始点・終点座標(ポイント単位、座標近接フォールバック用)
     public double StartX { get; init; }
     public double StartY { get; init; }

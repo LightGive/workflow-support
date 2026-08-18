@@ -21,6 +21,7 @@ internal class ConnectorResolver
         IReadOnlyDictionary<uint, string> xmlIdToNodeId)
     {
         var result = new List<(string, string, string?, double, double, double, double)>();
+        var shapeByXmlId = nodeShapes.ToDictionary(s => s.XmlId);
 
         foreach (var connector in connectors)
         {
@@ -31,12 +32,43 @@ internal class ConnectorResolver
 
             if (fromNodeId != null && toNodeId != null)
             {
-                result.Add((fromNodeId, toNodeId, connector.Label,
-                    connector.StartX, connector.StartY, connector.EndX, connector.EndY));
+                var (startX, startY) = RefineEndpoint(
+                    connector.StartShapeXmlId, connector.StartConnectionSiteIndex,
+                    connector.StartX, connector.StartY, shapeByXmlId);
+                var (endX, endY) = RefineEndpoint(
+                    connector.EndShapeXmlId, connector.EndConnectionSiteIndex,
+                    connector.EndX, connector.EndY, shapeByXmlId);
+
+                result.Add((fromNodeId, toNodeId, connector.Label, startX, startY, endX, endY));
             }
         }
 
         return result;
+    }
+
+    // XML上で明示的な接続先シェイプ・接続サイト番号(a:stCxn/a:endCxnのidx。基本図形では
+    // 0=上辺中点, 1=右辺中点, 2=下辺中点, 3=左辺中点)が判明している場合、コネクタのバウンディング
+    // ボックスの対角線から求めた近似座標ではなく、接続先シェイプの実際の接続サイト座標を使う。
+    // バウンディングボックスの対角線を使う近似は、カギ型接続線が大きく迂回する経路の場合に、
+    // シェイプへの実際の接続位置から離れてしまうことがある(同じ接続サイトから出る複数の矢印の
+    // 起点が、それぞれ違う座標として計算されてしまう)ため。
+    private static (double X, double Y) RefineEndpoint(
+        uint? shapeXmlId, uint? siteIndex, double fallbackX, double fallbackY,
+        IReadOnlyDictionary<uint, ShapeInfo> shapeByXmlId)
+    {
+        if (shapeXmlId.HasValue && siteIndex.HasValue
+            && shapeByXmlId.TryGetValue(shapeXmlId.Value, out var shape))
+        {
+            return siteIndex.Value switch
+            {
+                0 => (shape.CenterX, shape.Top),
+                1 => (shape.Left, shape.CenterY),
+                2 => (shape.CenterX, shape.Bottom),
+                3 => (shape.Right, shape.CenterY),
+                _ => (fallbackX, fallbackY),
+            };
+        }
+        return (fallbackX, fallbackY);
     }
 
     private string? ResolveEnd(

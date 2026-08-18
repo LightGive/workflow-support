@@ -5,9 +5,21 @@ namespace FlowChartImporter.Core.Importing;
 
 /// <summary>
 /// 分岐(ひし形)ノードから出る矢印のうち、矢印自体にテキストが無いものについて、
-/// 近くにあるYES/NOテキストボックスとの角度を比較し、最も角度が小さいテキストボックスのラベルを割り当てる。
-/// 矢印ごとに独立して最も近いテキストボックスを選ぶため、YES/NOそれぞれから複数本の矢印が
-/// 出ている(分岐先が3本・2本等に分かれている)場合でも、それぞれの矢印が正しく判定される。
+/// 近くにあるYES/NOテキストボックスとの距離を比較してラベルを割り当てる。
+/// 判定には、矢印(コネクタ)の分岐側の端点(=矢印の起点)からラベル中心までの距離を使う。
+///
+/// まず各矢印は独立して、より近い方の値(YES/NO。同じ値のテキストボックスが複数あれば最短距離の
+/// ものを使う)を選ぶ。これにより、YES/NOそれぞれから複数本の矢印が出ている場合(分岐先が3本・
+/// 2本等に分かれ、複数の矢印が同じ1つのテキストボックス付近から出ているケースを含む)でも、
+/// それぞれの矢印が正しく判定される。
+///
+/// ただしこれだけでは、複数の矢印の起点が近接している場合(同じ方向を向く矢印など)に、全ての
+/// 矢印が同じ値を選んでしまい、もう一方の値を選ぶ矢印が1本も無くなってしまうことがある。この
+/// 場合は、選ばれなかった値への距離と選んだ値への距離の比が最も1に近い(=どちらの値にも同じ
+/// くらい近く、入れ替えても不自然でない)矢印を1本、選ばれなかった値へ入れ替える。
+///
+/// 当初は分岐の中心から見た方向(角度)で比較していたが、複数の矢印が同じ方向を向くケースでは
+/// 方向の差がほぼ無くなり誤判定することが判明したため、距離による判定に変更した。
 /// </summary>
 internal static class BranchLabelResolver
 {
@@ -55,47 +67,69 @@ internal static class BranchLabelResolver
                 continue;
             }
 
-            var nearbyLabels = ownTextBoxes
-                .Select(tb => (Label: MatchYesNo(tb.Text), Direction: (X: tb.CenterX - diamond.CenterX, Y: tb.CenterY - diamond.CenterY)))
-                .Where(t => t.Label != null && (t.Direction.X != 0 || t.Direction.Y != 0))
+            var candidateLabels = ownTextBoxes
+                .Select(tb => (Label: MatchYesNo(tb.Text), tb.CenterX, tb.CenterY))
+                .Where(t => t.Label != null)
                 .ToList();
 
-            if (nearbyLabels.Count == 0)
+            if (candidateLabels.Count == 0)
             {
                 continue;
             }
 
-            foreach (var (connection, index) in group)
+            var distinctValues = candidateLabels.Select(l => l.Label!).Distinct().ToList();
+
+            var unlabeled = group.Where(t => t.connection.Label == null).ToList();
+            if (unlabeled.Count == 0)
             {
-                if (connection.Label != null)
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                var toArrowEnd = OutwardVector(diamond, connection);
-                if (toArrowEnd.X == 0 && toArrowEnd.Y == 0)
+            // 矢印ごとに、値(YES/NO)ごとの最短距離を求める(同じ値のテキストボックスが複数あっても
+            // 最も近い1つとの距離を代表値として使う)。
+            var distanceByValue = unlabeled.ToDictionary(
+                u => u.index,
+                u =>
                 {
-                    continue;
-                }
+                    var origin = ConnectorOrigin(diamond, u.connection);
+                    return distinctValues.ToDictionary(
+                        v => v,
+                        v => candidateLabels
+                            .Where(l => l.Label == v)
+                            .Min(l => GeometryUtils.Distance(origin.X, origin.Y, l.CenterX, l.CenterY)));
+                });
 
-                string? bestLabel = null;
-                double bestAngle = double.MaxValue;
+            // まず、矢印ごとに独立して最も近い値を選ぶ。
+            var assigned = unlabeled.ToDictionary(
+                u => u.index,
+                u => distanceByValue[u.index].OrderBy(kv => kv.Value).First().Key);
 
-                foreach (var (label, direction) in nearbyLabels)
+            // 選ばれなかった値がある場合、選んだ値との距離の比が最も1に近い(=入れ替えが最も妥当な)
+            // 矢印を1本、選ばれなかった値へ入れ替える。移動元が1本しかない場合は、そちらが空になる
+            // だけなので入れ替えない。
+            if (distinctValues.Count == 2)
+            {
+                foreach (var missingValue in distinctValues.Where(v => !assigned.Values.Contains(v)))
                 {
-                    var angle = AngleBetween(direction, toArrowEnd);
-                    if (angle < bestAngle)
+                    var otherValue = distinctValues.First(v => v != missingValue);
+                    var otherGroup = assigned.Where(kv => kv.Value == otherValue).Select(kv => kv.Key).ToList();
+                    if (otherGroup.Count <= 1)
                     {
-                        bestAngle = angle;
-                        bestLabel = label;
+                        continue;
                     }
-                }
 
-                if (bestLabel != null)
-                {
-                    connections[index] = (connection.FromNodeId, connection.ToNodeId, bestLabel,
-                        connection.StartX, connection.StartY, connection.EndX, connection.EndY);
+                    var swapIndex = otherGroup
+                        .OrderBy(i => distanceByValue[i][missingValue] / distanceByValue[i][otherValue])
+                        .First();
+                    assigned[swapIndex] = missingValue;
                 }
+            }
+
+            foreach (var (index, label) in assigned)
+            {
+                var connection = connections[index];
+                connections[index] = (connection.FromNodeId, connection.ToNodeId, label,
+                    connection.StartX, connection.StartY, connection.EndX, connection.EndY);
             }
         }
     }
@@ -131,29 +165,17 @@ internal static class BranchLabelResolver
         return char.IsLetter(c) ? c : null;
     }
 
-    // 分岐の中心から見た矢印の「外向き」方向ベクトル。
-    // 矢印の始点・終点のうち分岐から遠い方を、矢印の行き先方向とみなす。
-    // カギ型接続線(折れ曲がる矢印)は分岐の近くでは同じ辺から複数本が同じ方向に出て
-    // 後から分かれることが多いため、近い方の端点ではなく遠い方(=最終的な行き先)を使うことで、
-    // 同じ辺から出る複数の矢印(YESから複数本・NOから複数本 等)でも正しく区別できる。
-    private static (double X, double Y) OutwardVector(
+    // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
+    // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
+    private static (double X, double Y) ConnectorOrigin(
         ShapeInfo diamond,
         (string FromNodeId, string ToNodeId, string? Label, double StartX, double StartY, double EndX, double EndY) connection)
     {
         var distStart = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);
         var distEnd = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.EndX, connection.EndY);
 
-        return distStart > distEnd
-            ? (connection.StartX - diamond.CenterX, connection.StartY - diamond.CenterY)
-            : (connection.EndX - diamond.CenterX, connection.EndY - diamond.CenterY);
-    }
-
-    private static double AngleBetween((double X, double Y) a, (double X, double Y) b)
-    {
-        var dot = a.X * b.X + a.Y * b.Y;
-        var magA = Math.Sqrt(a.X * a.X + a.Y * a.Y);
-        var magB = Math.Sqrt(b.X * b.X + b.Y * b.Y);
-        var cos = Math.Clamp(dot / (magA * magB), -1.0, 1.0);
-        return Math.Acos(cos);
+        return distStart <= distEnd
+            ? (connection.StartX, connection.StartY)
+            : (connection.EndX, connection.EndY);
     }
 }
