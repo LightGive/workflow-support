@@ -1,0 +1,6 @@
+root = true
+
+[*.cs]
+# if 文などは必ず { } を付け、開き括弧は改行する(Allmanスタイル)
+csharp_prefer_braces = true:warning
+csharp_new_line_before_open_brace = all

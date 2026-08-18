@@ -213,51 +213,17 @@ internal class ExcelShapeExtractor
         }
 
         var xfrm = sp.ShapeProperties?.Transform2D;
-        double left, top, width, height;
         bool flipH = xfrm?.HorizontalFlip?.Value ?? false;
         bool flipV = xfrm?.VerticalFlip?.Value ?? false;
 
-        if (!double.IsNaN(anchorLeft))
-        {
-            // 位置・サイズとも、セルアンカー(from/to のセル位置+列幅・行高)から求めた値を
-            // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、
-            // 手作業ではなくスクリプト等で生成されたファイルでは実際の見た目の配置と大きくズレていることがある。
-            // コネクタ(ExtractConnector)側の位置・サイズも同じセルアンカー基準に揃えており、
-            // 混在させると分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため常に同じ基準を使う。
-            left = anchorLeft;
-            top = anchorTop;
-            if (!double.IsNaN(anchorRight))
-            {
-                width = anchorRight - anchorLeft;
-                height = anchorBottom - anchorTop;
-            }
-            else if (xfrm?.Extents != null)
-            {
-                // OneCellAnchor 等、終点セルが無くサイズをアンカーから求められない場合のみ
-                // a:xfrm の Extents(サイズ)にフォールバックする。
-                width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
-                height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
-            }
-            else
-            {
-                width = 0;
-                height = 0;
-            }
-        }
-        else if (xfrm?.Offset != null && xfrm.Extents != null)
-        {
-            // グループ内の子図形など、セルアンカーが無い場合のみ a:xfrm を使う。
-            left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
-            top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
-            width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
-            height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
-        }
-        else
+        var position = ResolveShapePosition(xfrm, transform, anchorLeft, anchorTop, anchorRight, anchorBottom);
+        if (position == null)
         {
             // アンカーも a:xfrm も無い場合は、位置不明の図形として読み飛ばす。
             warnings.Add($"位置不明のシェイプをスキップしました (name={cNvPr.Name?.Value})");
             return null;
         }
+        var (left, top, width, height) = position.Value;
 
         var prstGeom = sp.ShapeProperties?.GetFirstChild<PresetGeometry>();
         var preset = prstGeom?.Preset?.InnerText;
@@ -300,14 +266,50 @@ internal class ExcelShapeExtractor
         };
     }
 
-    // コネクタのバウンディングボックスの対角線を始点・終点とする。
-    // ボックスの位置・サイズは、そのコネクタ自身のセルアンカー(from/to)から求めた値を正式なものとして使う
-    // (a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値であり、手作業ではなくスクリプト等で
-    // 生成されたファイルでは実際の見た目の配置と大きくズレていることがあるため)。
-    // 図形(ShapeInfo)側の位置も同じセルアンカー基準に揃えており、両者を混在させると
-    // 分岐からの角度計算(BranchLabelResolver)が座標系の不一致で破綻するため、常に同じ基準を使う。
+    // シェイプの位置・サイズを求める。セルアンカーがあれば(from/to のセル位置+列幅・行高から求めた値を)
+    // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることが
+    // あるため、セルアンカーが無い場合(グループ内の子図形、またはOneCellAnchorのサイズ)のみ使う。
+    // アンカーも a:xfrm も無ければ位置不明としてnullを返す。
+    private static (double Left, double Top, double Width, double Height)? ResolveShapePosition(
+        Transform2D? xfrm, GroupTransform transform,
+        double anchorLeft, double anchorTop, double anchorRight, double anchorBottom)
+    {
+        if (!double.IsNaN(anchorLeft))
+        {
+            double width, height;
+            if (!double.IsNaN(anchorRight))
+            {
+                width = anchorRight - anchorLeft;
+                height = anchorBottom - anchorTop;
+            }
+            else if (xfrm?.Extents != null)
+            {
+                width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+                height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
+            }
+            else
+            {
+                width = 0;
+                height = 0;
+            }
+            return (anchorLeft, anchorTop, width, height);
+        }
+
+        if (xfrm?.Offset != null && xfrm.Extents != null)
+        {
+            double left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
+            double top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
+            double width = SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+            double height = SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
+            return (left, top, width, height);
+        }
+
+        return null;
+    }
+
+    // コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
+    // ResolveShapePositionと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
     // どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
-    // グループ内の子コネクタなど、セルアンカーが無い場合のみ a:xfrm の off/ext をボックスとして使う。
     private static ConnectorInfo? ExtractConnector(
         DwgSheet.ConnectionShape cxnSp, GroupTransform transform,
         double fallbackStartX, double fallbackStartY, double fallbackEndX, double fallbackEndY)
@@ -318,48 +320,35 @@ internal class ExcelShapeExtractor
             return null;
         }
 
-        double startX, startY, endX, endY;
         var xfrm = cxnSp.ShapeProperties?.Transform2D;
         bool flipH = xfrm?.HorizontalFlip?.Value ?? false;
         bool flipV = xfrm?.VerticalFlip?.Value ?? false;
 
-        if (!double.IsNaN(fallbackStartX))
-        {
-            // セルアンカー(from/to)は、Excelが実際に画面へ描画する際の最終的な(=回転・反転が
-            // 既に反映された)見た目のバウンディングボックスを表す。そのため rot はここでは適用しない
-            // (適用すると、既に回転済みの座標をさらに回転させる二重適用になってしまう)。
-            // flipH/flipV は、そのボックスのどちらの対角がコネクタの始点・終点かを決めるためだけに使う。
-            double left = fallbackStartX, top = fallbackStartY, right = fallbackEndX, bottom = fallbackEndY;
-            (startX, endX) = flipH ? (right, left) : (left, right);
-            (startY, endY) = flipV ? (bottom, top) : (top, bottom);
-        }
-        else if (xfrm?.Offset != null && xfrm.Extents != null)
-        {
-            // a:xfrm の off/ext は、回転前(ローカル座標系)のバウンディングボックスを表す。
-            // rot(60,000分の1度単位、時計回りが正)が指定されている場合は、
-            // 反転後のボックスをその中心まわりに回転させて実際の見た目の座標を求める。
-            double left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
-            double top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
-            double right = left + SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
-            double bottom = top + SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
-
-            (startX, endX) = flipH ? (right, left) : (left, right);
-            (startY, endY) = flipV ? (bottom, top) : (top, bottom);
-
-            int rotation60000ths = xfrm.Rotation?.Value ?? 0;
-            if (rotation60000ths != 0)
-            {
-                double centerX = (left + right) / 2;
-                double centerY = (top + bottom) / 2;
-                double angleRad = rotation60000ths / 60000.0 * (Math.PI / 180.0);
-                (startX, startY) = RotatePoint(startX, startY, centerX, centerY, angleRad);
-                (endX, endY) = RotatePoint(endX, endY, centerX, centerY, angleRad);
-            }
-        }
-        else
+        // セルアンカーは回転・反転が既に反映された見た目のボックスを表すため rot は適用しない
+        // (適用すると回転済み座標を二重に回転させてしまう)。アンカーが無い場合(グループ内の子コネクタ等)は
+        // a:xfrm の off/ext(回転前のローカル座標系)をボックスとして使う。
+        var box = ResolveConnectorBox(xfrm, transform, fallbackStartX, fallbackStartY, fallbackEndX, fallbackEndY);
+        if (box == null)
         {
             // アンカーも a:xfrm も無い場合は、位置不明のコネクタとして読み飛ばす。
             return null;
+        }
+        var (left, top, right, bottom) = box.Value;
+
+        var (startX, endX) = flipH ? (right, left) : (left, right);
+        var (startY, endY) = flipV ? (bottom, top) : (top, bottom);
+
+        // rot(60,000分の1度単位、時計回りが正)は、a:xfrm のボックスを使った場合のみ、
+        // 反転後のボックスをその中心まわりに回転させて実際の見た目の座標に補正する。
+        bool usedXfrmBox = double.IsNaN(fallbackStartX);
+        int rotation60000ths = usedXfrmBox ? (xfrm?.Rotation?.Value ?? 0) : 0;
+        if (rotation60000ths != 0)
+        {
+            double centerX = (left + right) / 2;
+            double centerY = (top + bottom) / 2;
+            double angleRad = rotation60000ths / 60000.0 * (Math.PI / 180.0);
+            (startX, startY) = RotatePoint(startX, startY, centerX, centerY, angleRad);
+            (endX, endY) = RotatePoint(endX, endY, centerX, centerY, angleRad);
         }
 
         var cxnSpPr = cxnSp.NonVisualConnectionShapeProperties
@@ -380,6 +369,27 @@ internal class ExcelShapeExtractor
             EndY = endY,
             IsDashed = ShapeGeometryClassifier.IsDashedLine(cxnSp.ShapeProperties?.GetFirstChild<Outline>()),
         };
+    }
+
+    private static (double Left, double Top, double Right, double Bottom)? ResolveConnectorBox(
+        Transform2D? xfrm, GroupTransform transform,
+        double fallbackLeft, double fallbackTop, double fallbackRight, double fallbackBottom)
+    {
+        if (!double.IsNaN(fallbackLeft))
+        {
+            return (fallbackLeft, fallbackTop, fallbackRight, fallbackBottom);
+        }
+
+        if (xfrm?.Offset != null && xfrm.Extents != null)
+        {
+            double left = SheetDimensionMap.EmuToPt(transform.TransformX(xfrm.Offset.X?.Value ?? 0));
+            double top = SheetDimensionMap.EmuToPt(transform.TransformY(xfrm.Offset.Y?.Value ?? 0));
+            double right = left + SheetDimensionMap.EmuToPt(transform.ScaleLengthX(xfrm.Extents.Cx?.Value ?? 0));
+            double bottom = top + SheetDimensionMap.EmuToPt(transform.ScaleLengthY(xfrm.Extents.Cy?.Value ?? 0));
+            return (left, top, right, bottom);
+        }
+
+        return null;
     }
 
     // 点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。
@@ -420,5 +430,4 @@ internal class ExcelShapeExtractor
             long.TryParse(marker.RowOffset?.Text, out var ro) ? ro : 0
         );
     }
-
 }

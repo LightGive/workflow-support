@@ -178,12 +178,7 @@ try
 
     if (outputPath != null)
     {
-        var outputDir = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(outputDir))
-        {
-            Directory.CreateDirectory(outputDir);
-        }
-
+        EnsureDirectoryExists(outputPath);
         File.WriteAllText(outputPath, json);
         Console.Error.WriteLine($"出力完了: {outputPath}");
     }
@@ -194,12 +189,7 @@ try
     // CSV 出力(フロー内容の要約)
     if (csvPath != null)
     {
-        var csvDir = Path.GetDirectoryName(csvPath);
-        if (!string.IsNullOrEmpty(csvDir))
-        {
-            Directory.CreateDirectory(csvDir);
-        }
-
+        EnsureDirectoryExists(csvPath);
         var csv = new FlowChartCsvExporter().Export(result.FlowChart, settings);
         File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         Console.Error.WriteLine($"CSV出力完了: {csvPath}");
@@ -226,6 +216,15 @@ catch (Exception ex)
 }
 
 // ── ヘルパー ─────────────────────────────────────────────────
+static void EnsureDirectoryExists(string filePath)
+{
+    var dir = Path.GetDirectoryName(filePath);
+    if (!string.IsNullOrEmpty(dir))
+    {
+        Directory.CreateDirectory(dir);
+    }
+}
+
 static void PrintSheetNames(string filePath)
 {
     try
