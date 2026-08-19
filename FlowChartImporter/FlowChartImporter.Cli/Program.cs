@@ -1,33 +1,36 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using FlowChartImporter.Core.Exporting;
-using FlowChartImporter.Core.Importing;
+using FlowChartImporter.Cli;
 using FlowChartImporter.Core.Settings;
 
 const string UsageText = """
     使用方法:
-      FlowChartImporter <Excelファイル> <シート名> [オプション]
+      FlowChartImporter <パス> [オプション]
 
     引数:
-      <Excelファイル>   解析する .xlsx ファイルのパス
-      <シート名>        処理対象のシート名
+      <パス>             解析する .xlsx ファイル、または .xlsx ファイルを含むフォルダのパス。
+                         フォルダを指定した場合、直下の .xlsx ファイルを一括処理する
+                         (サブフォルダは対象外。"~$" で始まるファイルはExcelのロックファイルとして除外)
 
     オプション:
+      --sheet <シート名> 処理対象のシート名
+                         (省略時: 非表示ではない先頭のシートを自動選択)
       --settings <パス>  設定ファイルのパス
                          (省略時: 実行ファイルと同じフォルダの settings.json)
-      --output <パス>    JSON 出力先ファイルのパス
-                         (省略時: JSON は出力せず、件数のみ表示)
-      --csv <パス>       フロー内容を要約したCSVファイルの出力先パス
-                         (省略時: CSV出力なし)
+      --output <パス>    JSON 出力先ファイルのパス(<パス>がファイル1つの場合のみ指定可)
+                         (省略時: 入力ファイルと同じフォルダの export フォルダに自動出力)
+      --csv <パス>       フロー内容を要約したCSVファイルの出力先パス(<パス>がファイル1つの場合のみ指定可)
+                         (省略時: 入力ファイルと同じフォルダの export フォルダに自動出力)
+      --no-json          JSON を出力しない
+      --no-csv           CSV を出力しない
+      --summary <パス>   フォルダを一括処理した際のサマリーレポート(テキスト形式)の出力先パス
+                         (省略時: <フォルダ>/export/summary.txt)
       --min-row <行番号> この行番号(1始まり)より上にあるシェイプ・テキストを無視する
                          (省略時: シート先頭から対象)
       --ignore-actor <実施主体名>
                          一番左(A列)の実施主体名がこれと一致する行のシェイプ・テキストを無視する
                          (省略時: 無視しない)
-      --list-sheets      指定ファイルのシート一覧を表示して終了
+      --list-sheets      指定ファイルのシート一覧を表示して終了(フォルダは指定不可)
       --help             このヘルプを表示して終了
 
     設定ファイル (settings.json) の形式:
@@ -65,19 +68,25 @@ if (args.Length == 0 || args.Contains("--help"))
     return 0;
 }
 
-string? filePath = null;
+string? path = null;
 string? sheetName = null;
 string? settingsPath = null;
 string? outputPath = null;
 string? csvPath = null;
+string? summaryPath = null;
 int minRow = 1;
 string? ignoreActor = null;
 bool listSheets = false;
+bool noJson = false;
+bool noCsv = false;
 
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
     {
+        case "--sheet" when i + 1 < args.Length:
+            sheetName = args[++i];
+            break;
         case "--settings" when i + 1 < args.Length:
             settingsPath = args[++i];
             break;
@@ -86,6 +95,15 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--csv" when i + 1 < args.Length:
             csvPath = args[++i];
+            break;
+        case "--summary" when i + 1 < args.Length:
+            summaryPath = args[++i];
+            break;
+        case "--no-json":
+            noJson = true;
+            break;
+        case "--no-csv":
+            noCsv = true;
             break;
         case "--min-row" when i + 1 < args.Length:
             if (!int.TryParse(args[++i], out minRow) || minRow < 1)
@@ -101,13 +119,9 @@ for (int i = 0; i < args.Length; i++)
             listSheets = true;
             break;
         default:
-            if (filePath == null)
+            if (path == null)
             {
-                filePath = args[i];
-            }
-            else if (sheetName == null)
-            {
-                sheetName = args[i];
+                path = args[i];
             }
             else
             {
@@ -119,32 +133,42 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-if (filePath == null)
+if (path == null)
 {
-    Console.Error.WriteLine("エラー: Excelファイルのパスを指定してください。");
+    Console.Error.WriteLine("エラー: Excelファイルまたはフォルダのパスを指定してください。");
     Console.Error.WriteLine(UsageText);
     return 1;
 }
 
-if (!File.Exists(filePath))
+bool isDirectory = Directory.Exists(path);
+if (!isDirectory && !File.Exists(path))
 {
-    Console.Error.WriteLine($"エラー: ファイルが見つかりません: {filePath}");
+    Console.Error.WriteLine($"エラー: ファイルまたはフォルダが見つかりません: {path}");
     return 1;
 }
 
 // ── シート一覧表示 ────────────────────────────────────────────
 if (listSheets)
 {
-    PrintSheetNames(filePath);
+    if (isDirectory)
+    {
+        Console.Error.WriteLine("エラー: --list-sheets はファイルを指定してください(フォルダは指定できません)。");
+        return 1;
+    }
+    PrintSheetNames(path);
     return 0;
 }
 
-if (sheetName == null)
+if (noJson && outputPath != null)
 {
-    Console.Error.WriteLine("エラー: シート名を指定してください。");
-    Console.Error.WriteLine(UsageText);
-    return 1;
+    Console.Error.WriteLine("[警告] --no-json が指定されているため --output は無視されます。");
 }
+if (noCsv && csvPath != null)
+{
+    Console.Error.WriteLine("[警告] --no-csv が指定されているため --csv は無視されます。");
+}
+bool writeJson = !noJson;
+bool writeCsv = !noCsv;
 
 // ── 設定ファイル読み込み ──────────────────────────────────────
 settingsPath ??= Path.Combine(AppContext.BaseDirectory, "settings.json");
@@ -156,72 +180,91 @@ if (!settingsExisted)
 }
 
 // ── インポート実行 ────────────────────────────────────────────
-try
+if (isDirectory)
 {
-    var service = new ExcelImportService(settings);
-    var result = service.Import(filePath, sheetName, minRow, ignoreActor);
-
-    // 警告を標準エラーへ出力
-    foreach (var warning in result.Warnings)
-        Console.Error.WriteLine($"[警告] {warning}");
-
-    // JSON シリアライズ
-    var jsonOptions = new JsonSerializerOptions
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-    };
-
-    var json = JsonSerializer.Serialize(result.FlowChart, jsonOptions);
-
-    if (outputPath != null)
-    {
-        EnsureDirectoryExists(outputPath);
-        File.WriteAllText(outputPath, json);
-        Console.Error.WriteLine($"出力完了: {outputPath}");
-    }
-
-    Console.Error.WriteLine($"  ノード数: {result.FlowChart.Nodes.Count}");
-    Console.Error.WriteLine($"  エッジ数: {result.FlowChart.Edges.Count}");
-
-    // CSV 出力(フロー内容の要約)
-    if (csvPath != null)
-    {
-        EnsureDirectoryExists(csvPath);
-        var csv = new FlowChartCsvExporter().Export(result.FlowChart, settings);
-        File.WriteAllText(csvPath, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-        Console.Error.WriteLine($"CSV出力完了: {csvPath}");
-    }
-
-    return 0;
+    return RunBatch(path);
 }
-catch (InvalidOperationException ex)
-{
-    Console.Error.WriteLine($"エラー: {ex.Message}");
-
-    // シートが見つからない場合はシート一覧を表示
-    if (ex.Message.Contains("シート"))
-    {
-        PrintSheetNames(filePath);
-    }
-
-    return 1;
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine($"予期しないエラーが発生しました: {ex.Message}");
-    return 1;
-}
+return RunSingleFile(path);
 
 // ── ヘルパー ─────────────────────────────────────────────────
-static void EnsureDirectoryExists(string filePath)
+int RunBatch(string folderPath)
 {
-    var dir = Path.GetDirectoryName(filePath);
-    if (!string.IsNullOrEmpty(dir))
+    if (outputPath != null || csvPath != null)
     {
-        Directory.CreateDirectory(dir);
+        Console.Error.WriteLine(
+            "[警告] フォルダを指定した一括処理では --output/--csv は無視されます(各ファイルと同じフォルダの export に自動出力されます)。");
+    }
+
+    var files = Directory.GetFiles(folderPath, "*.xlsx", SearchOption.TopDirectoryOnly)
+        .Where(f => !Path.GetFileName(f).StartsWith("~$", StringComparison.Ordinal))
+        .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    if (files.Count == 0)
+    {
+        Console.Error.WriteLine($"エラー: 対象の .xlsx ファイルが見つかりませんでした: {folderPath}");
+        return 1;
+    }
+
+    var outcomes = new List<ImportOutcome>();
+    foreach (var file in files)
+    {
+        Console.Error.WriteLine($"処理中: {file}");
+
+        var exportDir = Path.Combine(Path.GetDirectoryName(file)!, "export");
+        var baseName = Path.GetFileNameWithoutExtension(file);
+        var jsonOut = writeJson ? Path.Combine(exportDir, baseName + ".json") : null;
+        var csvOut = writeCsv ? Path.Combine(exportDir, baseName + ".csv") : null;
+
+        outcomes.Add(ImportRunner.ImportFile(file, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut));
+    }
+
+    var resolvedSummaryPath = summaryPath ?? Path.Combine(folderPath, "export", "summary.txt");
+    ImportRunner.WriteSummary(resolvedSummaryPath, folderPath, outcomes);
+    Console.Error.WriteLine($"サマリー出力完了: {resolvedSummaryPath}");
+
+    var successCount = outcomes.Count(o => o.Status == ImportOutcomeStatus.Success);
+    var noShapesCount = outcomes.Count(o => o.Status == ImportOutcomeStatus.NoShapes);
+    var failedCount = outcomes.Count(o => o.Status == ImportOutcomeStatus.Failed);
+    Console.Error.WriteLine($"  成功: {successCount}件 / 対象図形なし: {noShapesCount}件 / 失敗: {failedCount}件 (全{outcomes.Count}件)");
+
+    return failedCount > 0 ? 1 : 0;
+}
+
+int RunSingleFile(string filePath)
+{
+    var exportDir = Path.Combine(Path.GetDirectoryName(filePath) is { Length: > 0 } dir ? dir : ".", "export");
+    var baseName = Path.GetFileNameWithoutExtension(filePath);
+    var jsonOut = writeJson ? outputPath ?? Path.Combine(exportDir, baseName + ".json") : null;
+    var csvOut = writeCsv ? csvPath ?? Path.Combine(exportDir, baseName + ".csv") : null;
+
+    var outcome = ImportRunner.ImportFile(filePath, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut);
+
+    switch (outcome.Status)
+    {
+        case ImportOutcomeStatus.Success:
+            Console.Error.WriteLine($"  シート: {outcome.SheetName}");
+            Console.Error.WriteLine($"  ノード数: {outcome.NodeCount}");
+            Console.Error.WriteLine($"  エッジ数: {outcome.EdgeCount}");
+            if (jsonOut != null)
+            {
+                Console.Error.WriteLine($"出力完了: {jsonOut}");
+            }
+            if (csvOut != null)
+            {
+                Console.Error.WriteLine($"CSV出力完了: {csvOut}");
+            }
+            return 0;
+        case ImportOutcomeStatus.NoShapes:
+            Console.Error.WriteLine($"対象図形が見つかりませんでした。(シート: {outcome.SheetName})");
+            return 0;
+        default:
+            Console.Error.WriteLine($"エラー: {outcome.ErrorMessage}");
+            if (outcome.ErrorMessage?.Contains("シート") == true)
+            {
+                PrintSheetNames(filePath);
+            }
+            return 1;
     }
 }
 
