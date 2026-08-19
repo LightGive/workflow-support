@@ -79,15 +79,19 @@ public class ExcelImportService
         // (メモ・関連ファイルはノードそのものではなく、既に付随情報として関連ノードに統合済みのため対象外)
         ExcludeIsolatedNodes(chart, allWarnings);
 
-        // 8. ノード番号を採番(矢印で接続されたノードのみが対象)
+        // 8. 矢印でつながった一塊(処理の集まり)の中に、開始・終了ノード(楕円かつ入次数/出次数が0)が
+        // 1つも無い場合、その一塊は開始・終了が不明な断片的な処理とみなし、出力対象から除外する。
+        ExcludeFlowsWithoutStartOrEnd(chart, allWarnings);
+
+        // 9. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
 
-        // 9. 分岐(ひし形)のYES/NOは必ず対になっているはずである。
+        // 10. 分岐(ひし形)のYES/NOは必ず対になっているはずである。
         // 判定の結果、片方(YESのみ/NOのみ)しか見つからない場合はその判定を信用せず、
         // 警告したうえで分岐メモ(CSVの分岐ルート)には使わないようにする。
         NormalizeYesNoLabelPairs(chart, allWarnings);
 
-        // 10. 検証
+        // 11. 検証
         var validator = new FlowChartValidator();
         allWarnings.AddRange(validator.Validate(chart, _settings));
 
@@ -230,6 +234,101 @@ public class ExcelImportService
             allWarnings.Add(
                 $"[孤立シェイプ除外] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
+    }
+
+    // 矢印でつながった一塊(連結成分)ごとに、開始ノード(楕円かつ入次数0)・終了ノード(楕円かつ出次数0)が
+    // それぞれ1つ以上あるかを調べる。どちらか一方でも無い一塊は、どこから始まりどこで終わるか不明な
+    // 断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
+    // (孤立シェイプ除外を先に行っているため、ここで扱う一塊は必ず矢印を1本以上持つ)
+    private static void ExcludeFlowsWithoutStartOrEnd(FlowChart chart, List<string> allWarnings)
+    {
+        var adjacency = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
+        var inDegree = chart.Nodes.ToDictionary(n => n.Id, _ => 0);
+        var outDegree = chart.Nodes.ToDictionary(n => n.Id, _ => 0);
+        foreach (var edge in chart.Edges)
+        {
+            if (adjacency.TryGetValue(edge.FromNodeId, out var fromNeighbors))
+            {
+                fromNeighbors.Add(edge.ToNodeId);
+            }
+            if (adjacency.TryGetValue(edge.ToNodeId, out var toNeighbors))
+            {
+                toNeighbors.Add(edge.FromNodeId);
+            }
+            if (outDegree.ContainsKey(edge.FromNodeId))
+            {
+                outDegree[edge.FromNodeId]++;
+            }
+            if (inDegree.ContainsKey(edge.ToNodeId))
+            {
+                inDegree[edge.ToNodeId]++;
+            }
+        }
+
+        var nodeById = chart.Nodes.ToDictionary(n => n.Id);
+        var visited = new HashSet<string>();
+        var idsToExclude = new HashSet<string>();
+
+        foreach (var node in chart.Nodes)
+        {
+            if (!visited.Add(node.Id))
+            {
+                continue;
+            }
+
+            var component = CollectConnectedComponent(node.Id, adjacency, visited);
+            bool hasStart = component.Any(id => nodeById[id].ShapeType == ShapeType.Ellipse && inDegree[id] == 0);
+            bool hasEnd = component.Any(id => nodeById[id].ShapeType == ShapeType.Ellipse && outDegree[id] == 0);
+            if (hasStart && hasEnd)
+            {
+                continue;
+            }
+
+            string missingDescription = !hasStart && !hasEnd
+                ? "開始ノードも終了ノードも無い"
+                : !hasStart
+                    ? "開始ノードが無い"
+                    : "終了ノードが無い";
+
+            foreach (var id in component)
+            {
+                var excludedNode = nodeById[id];
+                allWarnings.Add(
+                    $"[開始/終了ノード無し] {WarningFormatting.DescribeShape(excludedNode.Text, excludedNode.Actors, excludedNode.ShapeType)} は、{missingDescription}一連の処理に含まれるため出力対象から除外しました。");
+                idsToExclude.Add(id);
+            }
+        }
+
+        if (idsToExclude.Count == 0)
+        {
+            return;
+        }
+
+        chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
+        chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+    }
+
+    private static List<string> CollectConnectedComponent(
+        string startId, Dictionary<string, List<string>> adjacency, HashSet<string> visited)
+    {
+        var component = new List<string> { startId };
+        var queue = new Queue<string>();
+        queue.Enqueue(startId);
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var next in adjacency.GetValueOrDefault(current, []))
+            {
+                if (visited.Add(next))
+                {
+                    component.Add(next);
+                    queue.Enqueue(next);
+                }
+            }
+        }
+
+        return component;
     }
 
     // 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
