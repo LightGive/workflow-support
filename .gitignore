@@ -71,5 +71,5 @@ x86/
 *.[Pp]ublish.xml
 
 # サンプルファイル置き場
-[S]amples/
+[Ss]amples/
 FlowChartImporter/FlowChartImporter.Cli/Properties/launchSettings.json
