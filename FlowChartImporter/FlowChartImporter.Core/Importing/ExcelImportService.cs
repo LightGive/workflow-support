@@ -79,9 +79,9 @@ public class ExcelImportService
         // (メモ・関連ファイルはノードそのものではなく、既に付随情報として関連ノードに統合済みのため対象外)
         ExcludeIsolatedNodes(chart, allWarnings);
 
-        // 8. 矢印でつながった一塊(処理の集まり)の中に、開始・終了ノード(楕円かつ入次数/出次数が0)が
-        // 1つも無い場合、その一塊は開始・終了が不明な断片的な処理とみなし、出力対象から除外する。
-        ExcludeFlowsWithoutStartOrEnd(chart, allWarnings);
+        // 8. 開始ノードから終了ノードまでの経路上に無いノード(例: 開始からは辿り着けないが終了には
+        // 合流するだけの、無関係な処理)は断片的な処理とみなし、出力対象から除外する。
+        ExcludeNodesOffStartToEndPath(chart, allWarnings);
 
         // 9. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
@@ -236,24 +236,27 @@ public class ExcelImportService
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
     }
 
-    // 矢印でつながった一塊(連結成分)ごとに、開始ノード(楕円かつ入次数0)・終了ノード(楕円かつ出次数0)が
-    // それぞれ1つ以上あるかを調べる。どちらか一方でも無い一塊は、どこから始まりどこで終わるか不明な
-    // 断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
-    // (孤立シェイプ除外を先に行っているため、ここで扱う一塊は必ず矢印を1本以上持つ)
-    private static void ExcludeFlowsWithoutStartOrEnd(FlowChart chart, List<string> allWarnings)
+    // 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
+    // 終了ノード(楕円かつ出次数0)に到達できるかを調べる。どちらか一方でも満たさないノードは、開始・終了の
+    // 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
+    // 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
+    // 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
+    // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印を1本以上持つ)
+    private static void ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
-        var adjacency = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
+        var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
+        var predecessors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var inDegree = chart.Nodes.ToDictionary(n => n.Id, _ => 0);
         var outDegree = chart.Nodes.ToDictionary(n => n.Id, _ => 0);
         foreach (var edge in chart.Edges)
         {
-            if (adjacency.TryGetValue(edge.FromNodeId, out var fromNeighbors))
+            if (successors.TryGetValue(edge.FromNodeId, out var succ))
             {
-                fromNeighbors.Add(edge.ToNodeId);
+                succ.Add(edge.ToNodeId);
             }
-            if (adjacency.TryGetValue(edge.ToNodeId, out var toNeighbors))
+            if (predecessors.TryGetValue(edge.ToNodeId, out var pred))
             {
-                toNeighbors.Add(edge.FromNodeId);
+                pred.Add(edge.FromNodeId);
             }
             if (outDegree.ContainsKey(edge.FromNodeId))
             {
@@ -265,38 +268,33 @@ public class ExcelImportService
             }
         }
 
-        var nodeById = chart.Nodes.ToDictionary(n => n.Id);
-        var visited = new HashSet<string>();
-        var idsToExclude = new HashSet<string>();
+        var startIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && inDegree[n.Id] == 0).Select(n => n.Id);
+        var endIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && outDegree[n.Id] == 0).Select(n => n.Id);
 
+        // 開始ノードから矢印を辿って到達できるノード全体
+        var reachableFromStart = BfsMultiSource(startIds, successors);
+        // 矢印を辿って終了ノードに到達できるノード全体(終了ノードから矢印を逆に辿って求める)
+        var canReachEnd = BfsMultiSource(endIds, predecessors);
+
+        var idsToExclude = new HashSet<string>();
         foreach (var node in chart.Nodes)
         {
-            if (!visited.Add(node.Id))
+            bool fromStart = reachableFromStart.Contains(node.Id);
+            bool toEnd = canReachEnd.Contains(node.Id);
+            if (fromStart && toEnd)
             {
                 continue;
             }
 
-            var component = CollectConnectedComponent(node.Id, adjacency, visited);
-            bool hasStart = component.Any(id => nodeById[id].ShapeType == ShapeType.Ellipse && inDegree[id] == 0);
-            bool hasEnd = component.Any(id => nodeById[id].ShapeType == ShapeType.Ellipse && outDegree[id] == 0);
-            if (hasStart && hasEnd)
-            {
-                continue;
-            }
+            string reason = !fromStart && !toEnd
+                ? "開始ノードにも終了ノードにも繋がっていない"
+                : !fromStart
+                    ? "開始ノードに繋がっていない"
+                    : "終了ノードに繋がっていない";
 
-            string missingDescription = !hasStart && !hasEnd
-                ? "開始ノードも終了ノードも無い"
-                : !hasStart
-                    ? "開始ノードが無い"
-                    : "終了ノードが無い";
-
-            foreach (var id in component)
-            {
-                var excludedNode = nodeById[id];
-                allWarnings.Add(
-                    $"[開始/終了ノード無し] {WarningFormatting.DescribeShape(excludedNode.Text, excludedNode.Actors, excludedNode.ShapeType)} は、{missingDescription}一連の処理に含まれるため出力対象から除外しました。");
-                idsToExclude.Add(id);
-            }
+            allWarnings.Add(
+                $"[開始/終了ノード無し] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は、{reason}ため出力対象から除外しました。");
+            idsToExclude.Add(node.Id);
         }
 
         if (idsToExclude.Count == 0)
@@ -308,12 +306,18 @@ public class ExcelImportService
         chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
     }
 
-    private static List<string> CollectConnectedComponent(
-        string startId, Dictionary<string, List<string>> adjacency, HashSet<string> visited)
+    private static HashSet<string> BfsMultiSource(
+        IEnumerable<string> sources, Dictionary<string, List<string>> adjacency)
     {
-        var component = new List<string> { startId };
+        var visited = new HashSet<string>();
         var queue = new Queue<string>();
-        queue.Enqueue(startId);
+        foreach (var source in sources)
+        {
+            if (visited.Add(source))
+            {
+                queue.Enqueue(source);
+            }
+        }
 
         while (queue.Count > 0)
         {
@@ -322,13 +326,12 @@ public class ExcelImportService
             {
                 if (visited.Add(next))
                 {
-                    component.Add(next);
                     queue.Enqueue(next);
                 }
             }
         }
 
-        return component;
+        return visited;
     }
 
     // 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
