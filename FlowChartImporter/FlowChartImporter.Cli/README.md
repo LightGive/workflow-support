@@ -5,16 +5,34 @@ Excelで作成した業務フロー図(図形+矢印)を解析し、JSONファ�
 ## 使い方
 
 ```
-FlowChartImporter.Cli.exe <Excelファイル> <シート名> [オプション]
+FlowChartImporter.Cli.exe <パス> [オプション]
 ```
 
-例:
+`<パス>`にはExcelファイル1つ、または`.xlsx`ファイルを含むフォルダを指定できます。フォルダを指定すると、直下の`.xlsx`ファイル(Excelのロックファイル`~$*.xlsx`は除く。サブフォルダは対象外)を順番に一括処理します。
+
+例(ファイル1つ):
 
 ```
-FlowChartImporter.Cli.exe 業務フロー.xlsx Sheet1 --csv 業務フロー.csv --output 業務フロー.json
+FlowChartImporter.Cli.exe 業務フロー.xlsx
 ```
 
-シート名が分からない場合は `--list-sheets` で一覧を確認できます。
+シート名を省略すると、非表示になっていない先頭のシートが自動的に使われます。特定のシートを指定したい場合は`--sheet`を使います。
+
+```
+FlowChartImporter.Cli.exe 業務フロー.xlsx --sheet Sheet1
+```
+
+出力先を指定しない場合、Excelファイルと同じフォルダに`export`フォルダが自動作成され、そこにJSON・CSVが出力されます(`業務フロー.xlsx` → `export\業務フロー.json` / `export\業務フロー.csv`)。
+
+例(フォルダ一括処理):
+
+```
+FlowChartImporter.Cli.exe C:\flows
+```
+
+`C:\flows`直下の全`.xlsx`ファイルを処理し、それぞれ同じフォルダの`export`にJSON/CSVを出力、`C:\flows\export\summary.txt`に結果一覧(テキスト形式)を出力します。1ファイルの失敗(シートが開けない等)があっても処理全体は止まらず、次のファイルへ進みます。
+
+シート名が分からない場合は `--list-sheets` で一覧を確認できます(ファイル1つのみ指定可)。
 
 ```
 FlowChartImporter.Cli.exe 業務フロー.xlsx --list-sheets
@@ -24,12 +42,16 @@ FlowChartImporter.Cli.exe 業務フロー.xlsx --list-sheets
 
 | オプション | 説明 |
 |---|---|
+| `--sheet <シート名>` | 処理対象のシート名(省略時: 非表示ではない先頭のシートを自動選択) |
 | `--settings <パス>` | 設定ファイルのパス(省略時: このexeと同じフォルダの `settings.json`) |
-| `--output <パス>` | JSONファイルの出力先パス(省略時: JSONは出力せず、ノード数・エッジ数のみ表示) |
-| `--csv <パス>` | 要約CSVファイルの出力先パス(省略時: CSV出力なし) |
+| `--output <パス>` | JSONファイルの出力先パス(ファイル1つを指定した場合のみ有効。省略時: `export`フォルダに自動出力) |
+| `--csv <パス>` | 要約CSVファイルの出力先パス(ファイル1つを指定した場合のみ有効。省略時: `export`フォルダに自動出力) |
+| `--no-json` | JSONを出力しない |
+| `--no-csv` | CSVを出力しない |
+| `--summary <パス>` | フォルダ一括処理時のサマリーレポート(テキスト形式)の出力先(省略時: `<フォルダ>\export\summary.txt`) |
 | `--min-row <行番号>` | この行番号(1始まり)より上の内容を無視する |
 | `--ignore-actor <実施主体名>` | 一番左の列に書かれた実施主体名がこれと一致する行を無視する |
-| `--list-sheets` | シート名の一覧を表示して終了 |
+| `--list-sheets` | シート名の一覧を表示して終了(フォルダは指定不可) |
 | `--help` | ヘルプを表示して終了 |
 
 実行時の警告(接続の重複、フローに繋がっていない図形など)は画面に表示されます。エラーが出ていなくても、内容に問題がありそうな場合は警告を確認してください。
