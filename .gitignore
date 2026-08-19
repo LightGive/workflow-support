@@ -69,3 +69,7 @@ x86/
 
 # Publish Web Output
 *.[Pp]ublish.xml
+
+# サンプルファイル置き場
+[S]amples/
+FlowChartImporter/FlowChartImporter.Cli/Properties/launchSettings.json

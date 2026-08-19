@@ -1,8 +1,0 @@
-{
-  "profiles": {
-    "FlowChartImporter.Cli": {
-      "commandName": "Project",
-      "commandLineArgs": "C:\\Git\\workflow-support\\samples\\sample1.xlsx Sheet1 \r\n--csv C:\\Git\\workflow-support\\samples\\export.csv \r\n--output C:\\Git\\workflow-support\\samples\\export.json\r\n--min-row 5\r\n--ignore-actor System"
-    }
-  }
-}
