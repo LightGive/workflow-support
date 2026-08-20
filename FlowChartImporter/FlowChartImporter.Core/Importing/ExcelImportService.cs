@@ -221,8 +221,12 @@ public class ExcelImportService
         List<(Internal.ShapeInfo Shape, FlowNode Node)> nodeMap,
         List<Internal.ShapeInfo> yesNoTextBoxes)
     {
-        // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れではないため対象外とする
+        // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れとしては扱わない
+        // (孤立ノード判定・開始/終了到達判定・分岐ラベル判定・CSV出力の対象外)。
+        // ただし読み込み自体は行い、DataEdgesとしてJSONに保持する。
+        // (DB(データストア)シェイプに繋がる矢印も、線種が実線であっても同様にDataEdgesとして扱う。後述)
         var flowConnectors = connectors.Where(c => !c.IsDashed).ToList();
+        var dataConnectors = connectors.Where(c => c.IsDashed).ToList();
         var resolver = new ConnectorResolver(_settings.ConnectionTolerancePoints);
         var connections = resolver.Resolve(flowConnectors, nodeShapes, xmlIdToNodeId);
 
@@ -231,14 +235,33 @@ public class ExcelImportService
         BranchLabelResolver.ResolveMissingLabels(
             connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints);
 
+        // DB(データストア)シェイプに繋がる矢印は、線種が実線でもデータのやり取りを表すとみなし、
+        // 点線の矢印と同様に業務フローのエッジ(Edges)ではなくDataEdgesとして扱う。
+        var databaseNodeIds = nodeMap
+            .Where(t => t.Node.ShapeType == ShapeType.Database)
+            .Select(t => t.Node.Id)
+            .ToHashSet();
+        bool TouchesDatabase(ResolvedConnection c) =>
+            databaseNodeIds.Contains(c.FromNodeId) || databaseNodeIds.Contains(c.ToNodeId);
+
         int edgeSeq = 1;
-        foreach (var (fromId, toId, label, _, _, _, _) in connections)
+        foreach (var (fromId, toId, label, _, _, _, _) in connections.Where(c => !TouchesDatabase(c)))
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
+
+        var dataConnections = resolver.Resolve(dataConnectors, nodeShapes, xmlIdToNodeId)
+            .Concat(connections.Where(TouchesDatabase));
+        int dataEdgeSeq = 1;
+        foreach (var (fromId, toId, label, _, _, _, _) in dataConnections)
+            chart.DataEdges.Add(new FlowEdge($"dataEdge{dataEdgeSeq++}", fromId, toId, label));
     }
 
     private static void ExcludeIsolatedNodes(FlowChart chart, List<string> allWarnings)
     {
+        // 業務フローの矢印(Edges)だけでなく、データのやり取りを表す矢印(DataEdges。点線の矢印、
+        // およびDB(データストア)シェイプに繋がる矢印)が1本でも繋がっていれば「孤立」とはみなさない
+        // (外部システム・DB等、業務フローには参加しないがデータのやり取りだけがある図形をJSONに残すため)。
         var connectedNodeIds = chart.Edges
+            .Concat(chart.DataEdges)
             .SelectMany(e => new[] { e.FromNodeId, e.ToNodeId })
             .ToHashSet();
         var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
@@ -246,6 +269,7 @@ public class ExcelImportService
             allWarnings.Add(
                 $"[孤立シェイプ除外] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は矢印が1本も接続されていないため出力対象から除外しました。");
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
+        chart.DataEdges.RemoveAll(e => !connectedNodeIds.Contains(e.FromNodeId) || !connectedNodeIds.Contains(e.ToNodeId));
     }
 
     // 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
@@ -253,7 +277,9 @@ public class ExcelImportService
     // 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
     // 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
     // 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
-    // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印を1本以上持つ)
+    // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
+    // 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
+    // そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
     private static void ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
@@ -291,6 +317,12 @@ public class ExcelImportService
         var idsToExclude = new HashSet<string>();
         foreach (var node in chart.Nodes)
         {
+            if (inDegree[node.Id] == 0 && outDegree[node.Id] == 0)
+            {
+                // 業務フローの矢印(Edges)を1本も持たない(DataEdgesのみで繋がっている)ノードは対象外。
+                continue;
+            }
+
             bool fromStart = reachableFromStart.Contains(node.Id);
             bool toEnd = canReachEnd.Contains(node.Id);
             if (fromStart && toEnd)
@@ -316,6 +348,7 @@ public class ExcelImportService
 
         chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
         chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+        chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
     }
 
     private static HashSet<string> BfsMultiSource(

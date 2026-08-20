@@ -12,11 +12,17 @@ public class FlowChart
 
     public List<FlowEdge> Edges { get; set; }
 
+    /// <summary>データのやり取りを表す矢印(点線の矢印、およびDB(データストア)シェイプに繋がる矢印)。
+    /// 業務フローのエッジ(Edges)とは別に保持する。
+    /// 孤立ノード判定・開始/終了到達判定・分岐ラベル判定・CSV出力等、フロー関連の処理では使われない。</summary>
+    public List<FlowEdge> DataEdges { get; set; }
+
     public FlowChart(string sheetName)
     {
         SheetName = sheetName;
         Nodes = [];
         Edges = [];
+        DataEdges = [];
     }
 }
 
@@ -108,6 +114,7 @@ public enum ShapeType
     Parallelogram,
     Line,
     Bracket,
+    Database,
     Other,
 }
 
