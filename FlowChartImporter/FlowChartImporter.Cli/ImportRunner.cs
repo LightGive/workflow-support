@@ -20,7 +20,7 @@ internal record ImportOutcome(
     ImportOutcomeStatus Status,
     int NodeCount,
     int EdgeCount,
-    int WarningCount,
+    IReadOnlyList<string> Warnings,
     string? ErrorMessage);
 
 /// <summary>1ファイル分のインポート実行と、JSON/CSV出力・一括処理サマリー(txt)の書き出しを行う。</summary>
@@ -56,7 +56,7 @@ internal static class ImportRunner
                 sheetName = WorkbookSheetInspector.FindFirstVisibleSheetName(filePath);
                 if (sheetName == null)
                 {
-                    return new ImportOutcome(filePath, null, ImportOutcomeStatus.Failed, 0, 0, 0,
+                    return new ImportOutcome(filePath, null, ImportOutcomeStatus.Failed, 0, 0, [],
                         "表示状態のシートが見つかりませんでした。");
                 }
             }
@@ -71,7 +71,7 @@ internal static class ImportRunner
 
             if (result.FlowChart.Nodes.Count == 0)
             {
-                return new ImportOutcome(filePath, sheetName, ImportOutcomeStatus.NoShapes, 0, 0, result.Warnings.Count, null);
+                return new ImportOutcome(filePath, sheetName, ImportOutcomeStatus.NoShapes, 0, 0, result.Warnings, null);
             }
 
             if (jsonOutputPath != null)
@@ -88,11 +88,11 @@ internal static class ImportRunner
             }
 
             return new ImportOutcome(filePath, sheetName, ImportOutcomeStatus.Success,
-                result.FlowChart.Nodes.Count, result.FlowChart.Edges.Count, result.Warnings.Count, null);
+                result.FlowChart.Nodes.Count, result.FlowChart.Edges.Count, result.Warnings, null);
         }
         catch (Exception ex)
         {
-            return new ImportOutcome(filePath, sheetName, ImportOutcomeStatus.Failed, 0, 0, 0, ex.Message);
+            return new ImportOutcome(filePath, sheetName, ImportOutcomeStatus.Failed, 0, 0, [], ex.Message);
         }
     }
 
@@ -119,7 +119,7 @@ internal static class ImportRunner
             {
                 case ImportOutcomeStatus.Success:
                     sb.AppendLine(
-                        $"[成功] {fileName} (シート: {outcome.SheetName}) ノード数: {outcome.NodeCount} エッジ数: {outcome.EdgeCount} 警告: {outcome.WarningCount}件");
+                        $"[成功] {fileName} (シート: {outcome.SheetName}) ノード数: {outcome.NodeCount} エッジ数: {outcome.EdgeCount} 警告: {outcome.Warnings.Count}件");
                     break;
                 case ImportOutcomeStatus.NoShapes:
                     sb.AppendLine($"[対象図形なし] {fileName} (シート: {outcome.SheetName})");
@@ -127,6 +127,12 @@ internal static class ImportRunner
                 case ImportOutcomeStatus.Failed:
                     sb.AppendLine($"[失敗] {fileName} {outcome.ErrorMessage}");
                     break;
+            }
+
+            // CLI標準エラー出力と同じ警告ログを、ファイルごとの結果の下にそのまま列挙する。
+            foreach (var warning in outcome.Warnings)
+            {
+                sb.AppendLine($"    [警告] {warning}");
             }
         }
 

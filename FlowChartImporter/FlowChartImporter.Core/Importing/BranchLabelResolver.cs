@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FlowChartImporter.Core.Importing.Internal;
 using FlowChartImporter.Core.Models;
 
@@ -121,36 +122,31 @@ internal static class BranchLabelResolver
         }
     }
 
+    // 先頭の装飾(かっこ・空白)に続けてYES/NOが書かれているかを判定する。
+    // "[ No ]" のように直後で終わる場合だけでなく、"[ YES ]=こういう状況の時" のように、
+    // YES/NOの後に条件の説明が続く場合も判定できるよう、末尾までの完全一致は要求しない。
+    // ただし "Note" や "Yesterday" のような単語を誤って拾わないよう、YES/NOの直後は
+    // 英字以外(説明文の区切り記号・空白・かっこ・非ASCII文字等)か文字列末尾であることを要求する。
+    private static readonly Regex YesNoPrefixPattern = new(
+        @"^\s*[\[［(（【]?\s*(YES|NO)\s*[\]］)）】]?(?=\s*$|\s*[^A-Za-z])",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字、全角・半角を区別しない)。該当しない場合はnull。</summary>
     public static string? MatchYesNo(string text)
     {
-        // "[ No ]" や "YES]"、全角の "ＹＥＳ" のように、装飾のかっこ・空白や全角表記の場合があるため、
-        // 英字(全角英字は半角に変換したうえで)以外の文字(かっこ・全角/半角スペース等)を除いてから比較する。
-        var normalized = new string(text
-            .Select(ToHalfWidthLetterOrNull)
-            .Where(c => c.HasValue)
-            .Select(c => c!.Value)
-            .ToArray());
-        if (string.Equals(normalized, "YES", StringComparison.OrdinalIgnoreCase))
+        var normalized = NormalizeFullWidthLetters(text);
+        var match = YesNoPrefixPattern.Match(normalized);
+        if (!match.Success)
         {
-            return "Y";
+            return null;
         }
-        if (string.Equals(normalized, "NO", StringComparison.OrdinalIgnoreCase))
-        {
-            return "N";
-        }
-        return null;
+        return string.Equals(match.Groups[1].Value, "YES", StringComparison.OrdinalIgnoreCase) ? "Y" : "N";
     }
 
-    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。半角英字はそのまま、それ以外(数字・記号等)はnullを返す。
-    private static char? ToHalfWidthLetterOrNull(char c)
-    {
-        if (c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ')
-        {
-            return (char)(c - 0xFEE0);
-        }
-        return char.IsLetter(c) ? c : null;
-    }
+    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
+    // (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
+    private static string NormalizeFullWidthLetters(string text) =>
+        new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - 0xFEE0) : c).ToArray());
 
     // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
     // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
