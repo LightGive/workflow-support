@@ -122,20 +122,20 @@ internal static class BranchLabelResolver
         }
     }
 
-    // 先頭の装飾(かっこ・空白)に続けてYES/NOが書かれているかを判定する。
-    // "[ No ]" のように直後で終わる場合だけでなく、"[ YES ]=こういう状況の時" のように、
-    // YES/NOの後に条件の説明が続く場合も判定できるよう、末尾までの完全一致は要求しない。
-    // ただし "Note" や "Yesterday" のような単語を誤って拾わないよう、YES/NOの直後は
-    // 英字以外(説明文の区切り記号・空白・かっこ・非ASCII文字等)か文字列末尾であることを要求する。
-    private static readonly Regex YesNoPrefixPattern = new(
-        @"^\s*[\[［(（【]?\s*(YES|NO)\s*[\]］)）】]?(?=\s*$|\s*[^A-Za-z])",
+    // YES/NOラベル候補(テキストボックス・枠線なし矩形)は実運用上YES/NO以外の用途に作られないため、
+    // 先頭一致には限定せず、テキスト中のどこにYES/NOがあっても単語として認識する
+    // (例: "[ YES ]=こういう状況の時"、"この場合はYESとなる" のどちらも認識できる)。
+    // ただし "Note" や "Yesterday" のように英字の単語の一部になっている場合は誤って拾わないよう、
+    // 前後が英字で連続していない(=独立した単語になっている)ことを要求する。
+    private static readonly Regex YesNoWordPattern = new(
+        @"(?<![A-Za-z])(YES|NO)(?![A-Za-z])",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     /// <summary>"YES"→"Y"、"NO"→"N" に正規化する(大文字・小文字、全角・半角を区別しない)。該当しない場合はnull。</summary>
     public static string? MatchYesNo(string text)
     {
         var normalized = NormalizeFullWidthLetters(text);
-        var match = YesNoPrefixPattern.Match(normalized);
+        var match = YesNoWordPattern.Match(normalized);
         if (!match.Success)
         {
             return null;
