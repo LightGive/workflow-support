@@ -56,7 +56,7 @@ public class ExcelImportService
         allWarnings.AddRange(extractWarnings);
 
         // 2. シェイプをノード候補・YES/NOラベル候補・備考候補等に分類し、Line シェイプをコネクタに変換
-        var (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes) = ClassifyShapes(shapes);
+        var (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes) = ClassifyShapes(shapes, allWarnings);
         AddLineConnectors(lineShapes, connectors);
 
         // 3. ノードを生成
@@ -113,7 +113,7 @@ public class ExcelImportService
         List<Internal.ShapeInfo> NodeShapes,
         List<Internal.ShapeInfo> YesNoTextBoxes,
         List<Internal.ShapeInfo> RemarkTextBoxes
-        ) ClassifyShapes(List<Internal.ShapeInfo> shapes)
+        ) ClassifyShapes(List<Internal.ShapeInfo> shapes, List<string> warnings)
     {
         bool IsBorderlessRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.HasNoLine;
         bool IsDashedRectangle(Internal.ShapeInfo s) => s.ShapeType == ShapeType.Rectangle && s.IsDashed;
@@ -125,6 +125,18 @@ public class ExcelImportService
         var yesNoTextBoxes = shapes
             .Where(s => IsYesNoLabelCandidate(s) && BranchLabelResolver.MatchYesNo(s.Text) != null)
             .ToList();
+
+        // YES/NOラベル候補(テキストボックス・枠線なし矩形)だが、YES/NOとして認識できないテキストが
+        // 書かれている図形は、備考(「[」図形)としても扱われず、分岐ラベルにも使われないため
+        // 内容がそのまま失われてしまう。気づけるよう警告しておく。
+        foreach (var shape in shapes.Where(s => IsYesNoLabelCandidate(s)
+                     && !string.IsNullOrWhiteSpace(s.Text)
+                     && BranchLabelResolver.MatchYesNo(s.Text) == null))
+        {
+            warnings.Add(
+                $"[YES/NO判定不可] '{WarningFormatting.Truncate(shape.Text)}' (行{shape.AnchorFromRow + 1}, 列{shape.AnchorFromCol + 1}) "
+                + "はYES/NOのテキストとして認識できず、備考としても扱われないため出力されません。");
+        }
 
         // ノードへの備考(メモ)は「[」(角かっこ)の図形に書かれたテキストのみを対象とする。
         var remarkTextBoxes = shapes

@@ -30,7 +30,7 @@ FlowChartImporter.Cli.exe 業務フロー.xlsx --sheet Sheet1
 FlowChartImporter.Cli.exe C:\flows
 ```
 
-`C:\flows`直下の全`.xlsx`ファイルを処理し、それぞれ同じフォルダの`export`にJSON/CSVを出力、`C:\flows\export\summary.txt`に結果一覧(テキスト形式)を出力します。1ファイルの失敗(シートが開けない等)があっても処理全体は止まらず、次のファイルへ進みます。
+`C:\flows`直下の全`.xlsx`ファイルを処理し、それぞれ同じフォルダの`export`にJSON/CSVを出力、`C:\flows\export\summary.txt`に結果一覧(テキスト形式)を出力します。summary.txtには画面に表示されるのと同じ`[警告]`ログもファイルごとに記載されるため、後から警告内容だけをまとめて確認できます。1ファイルの失敗(シートが開けない等)があっても処理全体は止まらず、次のファイルへ進みます。
 
 シート名が分からない場合は `--list-sheets` で一覧を確認できます(ファイル1つのみ指定可)。
 
