@@ -19,6 +19,7 @@ internal static class ShapeGeometryClassifier
     private const string PresetParallelogram = "parallelogram";
     private const string PresetLeftBracket = "leftBracket";
     private const string PresetRightBracket = "rightBracket";
+    private const string PresetFlowChartMagneticDisk = "flowChartMagneticDisk";
     private const string PresetLine = "line";
     private const string PresetStraightConnector1 = "straightConnector1";
     private const string PresetBentConnector2 = "bentConnector2";
@@ -39,6 +40,7 @@ internal static class ShapeGeometryClassifier
         PresetFlowChartDocument or PresetFoldedCorner => Models.ShapeType.Document,
         PresetParallelogram => Models.ShapeType.Parallelogram,
         PresetLeftBracket or PresetRightBracket => Models.ShapeType.Bracket,
+        PresetFlowChartMagneticDisk => Models.ShapeType.Database,
         PresetLine or PresetStraightConnector1
             or PresetBentConnector2 or PresetBentConnector3 or PresetBentConnector4 or PresetBentConnector5
             => Models.ShapeType.Line,

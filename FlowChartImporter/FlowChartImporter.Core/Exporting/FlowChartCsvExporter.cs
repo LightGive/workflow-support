@@ -57,7 +57,8 @@ public class FlowChartCsvExporter
         var sb = new StringBuilder();
         sb.Append("処理名,種類,分岐ルート,実施主体,内容,備考\r\n");
 
-        foreach (var node in chart.Nodes.OrderBy(n => n.Number))
+        // DB(データストア)シェイプは業務フローの処理ではないため、CSVには出力しない(JSONには残す)
+        foreach (var node in chart.Nodes.Where(n => n.ShapeType != ShapeType.Database).OrderBy(n => n.Number))
         {
             var route = BuildBranchRoute(node.Id, idom, nodeById, displayNames, outgoing, successors);
             sb.Append(CsvField(displayNames[node.Id])).Append(',')
@@ -102,13 +103,18 @@ public class FlowChartCsvExporter
         var lines = new List<string>();
         if (node.RelatedFiles.Count > 0)
         {
-            lines.Add("関連ファイル: " + string.Join(", ", node.RelatedFiles));
+            // 添付ファイル(書類シェイプ)のテキストは複数行にまたがっていることがあるが、
+            // 備考欄では1件1行で列挙したいため、ファイル名内部の改行は取り除く
+            lines.Add("関連ファイル: " + string.Join(", ", node.RelatedFiles.Select(StripNewlines)));
         }
         foreach (var remark in node.Remarks)
             lines.Add("メモ: " + remark);
 
         return string.Join("\n", lines);
     }
+
+    private static string StripNewlines(string value) =>
+        value.Replace("\r\n", "").Replace("\n", "").Replace("\r", "");
 
     // ── 分岐ルート判定 ───────────────────────────────────────────
     // 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、
