@@ -105,6 +105,10 @@ internal static class ImportRunner
         var noShapesCount = outcomes.Count(o => o.Status == ImportOutcomeStatus.NoShapes);
         var failedCount = outcomes.Count(o => o.Status == ImportOutcomeStatus.Failed);
 
+        const int SeparatorWidth = 60;
+        var fileSeparator = new string('-', SeparatorWidth);
+        var totalSeparator = new string('=', SeparatorWidth);
+
         var sb = new StringBuilder();
         sb.AppendLine("FlowChartImporter 一括処理サマリー");
         sb.AppendLine($"対象フォルダ: {sourceFolder}");
@@ -112,32 +116,41 @@ internal static class ImportRunner
         sb.AppendLine($"対象ファイル数: {outcomes.Count}");
         sb.AppendLine();
 
-        foreach (var outcome in outcomes)
+        // 1ファイル分のログを区切り線で明確に囲み、どこからどこまでが同じファイルの
+        // ログかひと目で分かるようにする(特にファイルごとの警告件数が多い場合を想定)。
+        for (int i = 0; i < outcomes.Count; i++)
         {
+            var outcome = outcomes[i];
             var fileName = Path.GetFileName(outcome.FilePath);
+
+            sb.AppendLine(fileSeparator);
+            sb.AppendLine($"[{i + 1}/{outcomes.Count}] {fileName}");
+            sb.AppendLine(fileSeparator);
+
             switch (outcome.Status)
             {
                 case ImportOutcomeStatus.Success:
                     sb.AppendLine(
-                        $"[成功] {fileName} (シート: {outcome.SheetName}) ノード数: {outcome.NodeCount} エッジ数: {outcome.EdgeCount} 警告: {outcome.Warnings.Count}件");
+                        $"結果: 成功 / シート: {outcome.SheetName} / ノード数: {outcome.NodeCount} / エッジ数: {outcome.EdgeCount} / 警告: {outcome.Warnings.Count}件");
                     break;
                 case ImportOutcomeStatus.NoShapes:
-                    sb.AppendLine($"[対象図形なし] {fileName} (シート: {outcome.SheetName})");
+                    sb.AppendLine($"結果: 対象図形なし / シート: {outcome.SheetName}");
                     break;
                 case ImportOutcomeStatus.Failed:
-                    sb.AppendLine($"[失敗] {fileName} {outcome.ErrorMessage}");
+                    sb.AppendLine($"結果: 失敗 / エラー: {outcome.ErrorMessage}");
                     break;
             }
 
-            // CLI標準エラー出力と同じ警告ログを、ファイルごとの結果の下にそのまま列挙する。
+            // CLI標準エラー出力と同じ警告ログを、このファイルの区切りの中にそのまま列挙する。
             foreach (var warning in outcome.Warnings)
             {
-                sb.AppendLine($"    [警告] {warning}");
+                sb.AppendLine($"[警告] {warning}");
             }
+
+            sb.AppendLine();
         }
 
-        sb.AppendLine();
-        sb.AppendLine(new string('-', 50));
+        sb.AppendLine(totalSeparator);
         sb.AppendLine($"成功: {successCount}件 / 対象図形なし: {noShapesCount}件 / 失敗: {failedCount}件 (全{outcomes.Count}件)");
 
         File.WriteAllText(summaryPath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
