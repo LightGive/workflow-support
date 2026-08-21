@@ -71,12 +71,20 @@ public class FlowEdge
     /// <summary>コネクタ(矢印)自体に書かれたテキスト(分岐の "Y"/"N" 等)。未設定時はnull</summary>
     public string? Label { get; set; }
 
-    public FlowEdge(string id, string fromNodeId, string toNodeId, string? label = null)
+    /// <summary>
+    /// Labelが分岐(ひし形)近くのYES/NOラベル図形から"Y"/"N"に正規化された場合の、
+    /// 正規化前の元のテキスト(例: "[ YES ] = 与信確認が完了した場合")。未設定時はnull
+    /// (CSV出力では使われず、JSONにのみ保持する)
+    /// </summary>
+    public string? LabelText { get; set; }
+
+    public FlowEdge(string id, string fromNodeId, string toNodeId, string? label = null, string? labelText = null)
     {
         Id = id;
         FromNodeId = fromNodeId;
         ToNodeId = toNodeId;
         Label = label;
+        LabelText = labelText;
     }
 }
 

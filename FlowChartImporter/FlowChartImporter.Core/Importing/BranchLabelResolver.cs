@@ -60,7 +60,7 @@ internal static class BranchLabelResolver
             }
 
             var candidateLabels = ownTextBoxes
-                .Select(tb => (Label: MatchYesNo(tb.Text), tb.CenterX, tb.CenterY))
+                .Select(tb => (Label: MatchYesNo(tb.Text), Text: tb.Text, tb.CenterX, tb.CenterY))
                 .Where(t => t.Label != null)
                 .ToList();
 
@@ -77,8 +77,9 @@ internal static class BranchLabelResolver
                 continue;
             }
 
-            // 矢印ごとに、値(YES/NO)ごとの最短距離を求める。
-            var distanceByValue = unlabeled.ToDictionary(
+            // 矢印ごとに、値(YES/NO)ごとの最短距離と、その最短距離を持つ候補図形(元のテキストを
+            // LabelTextとして残すため)を求める。
+            var nearestByValue = unlabeled.ToDictionary(
                 u => u.index,
                 u =>
                 {
@@ -87,8 +88,13 @@ internal static class BranchLabelResolver
                         v => v,
                         v => candidateLabels
                             .Where(l => l.Label == v)
-                            .Min(l => GeometryUtils.Distance(origin.X, origin.Y, l.CenterX, l.CenterY)));
+                            .Select(l => (l.Text, Distance: GeometryUtils.Distance(origin.X, origin.Y, l.CenterX, l.CenterY)))
+                            .OrderBy(t => t.Distance)
+                            .First());
                 });
+            var distanceByValue = nearestByValue.ToDictionary(
+                kv => kv.Key,
+                kv => kv.Value.ToDictionary(v => v.Key, v => v.Value.Distance));
 
             // まず、矢印ごとに独立して最も近い値を選ぶ。
             var assigned = unlabeled.ToDictionary(
@@ -117,7 +123,11 @@ internal static class BranchLabelResolver
 
             foreach (var (index, label) in assigned)
             {
-                connections[index] = connections[index] with { Label = label };
+                connections[index] = connections[index] with
+                {
+                    Label = label,
+                    LabelText = nearestByValue[index][label].Text,
+                };
             }
         }
     }

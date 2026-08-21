@@ -8,4 +8,5 @@ internal sealed record ResolvedConnection(
     double StartX,
     double StartY,
     double EndX,
-    double EndY);
+    double EndY,
+    string? LabelText = null);
