@@ -139,7 +139,7 @@ FlowChartImporter/
 | ShapeType | 対応するprst値 | 用途 |
 |-----------|---------------|------|
 | `rectangle` | `rect`, `roundRect`, `flowChartProcess`, `flowChartAlternateProcess` | 業務ステップ |
-| `diamond` | `flowChartDecision`。上記に該当しない場合でも、自由図形(`a:custGeom`)のパスが上下左右の中点を頂点とするひし形であれば `diamond` と判定する(下記実装メモ参照) | 分岐 |
+| `diamond` | `flowChartDecision`(フローチャート: 判断)、`diamond`(基本図形のひし形)。上記に該当しない場合でも、自由図形(`a:custGeom`)のパスが上下左右の中点を頂点とするひし形であれば `diamond` と判定する(下記実装メモ参照) | 分岐 |
 | `ellipse` | `ellipse`, `flowChartConnector`(フローチャート: 結合子。実データで開始/終了マーカーとして使われていた) | 開始・終了 |
 | `document` | `flowChartDocument`, `foldedCorner` | 書類シェイプ |
 | `parallelogram` | `parallelogram` | 入出力 |

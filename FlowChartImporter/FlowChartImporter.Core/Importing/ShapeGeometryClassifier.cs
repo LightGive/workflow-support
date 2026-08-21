@@ -12,6 +12,7 @@ internal static class ShapeGeometryClassifier
     private const string PresetFlowChartAlternateProcess = "flowChartAlternateProcess";
     private const string PresetRoundRectangle = "roundRect";
     private const string PresetFlowChartDecision = "flowChartDecision";
+    private const string PresetDiamond = "diamond";
     private const string PresetEllipse = "ellipse";
     private const string PresetFlowChartConnector = "flowChartConnector";
     private const string PresetFlowChartDocument = "flowChartDocument";
@@ -35,7 +36,7 @@ internal static class ShapeGeometryClassifier
     {
         PresetRectangle or PresetFlowChartProcess or PresetFlowChartAlternateProcess or PresetRoundRectangle
             => Models.ShapeType.Rectangle,
-        PresetFlowChartDecision => Models.ShapeType.Diamond,
+        PresetFlowChartDecision or PresetDiamond => Models.ShapeType.Diamond,
         PresetEllipse or PresetFlowChartConnector => Models.ShapeType.Ellipse,
         PresetFlowChartDocument or PresetFoldedCorner => Models.ShapeType.Document,
         PresetParallelogram => Models.ShapeType.Parallelogram,
