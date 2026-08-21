@@ -81,7 +81,7 @@ public class ExcelImportService
 
         // 8. 開始ノードから終了ノードまでの経路上に無いノード(例: 開始からは辿り着けないが終了には
         // 合流するだけの、無関係な処理)は断片的な処理とみなし、出力対象から除外する。
-        ExcludeNodesOffStartToEndPath(chart, allWarnings);
+        var diamondsWithExcludedBranch = ExcludeNodesOffStartToEndPath(chart, allWarnings);
 
         // 9. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
@@ -89,7 +89,7 @@ public class ExcelImportService
         // 10. 分岐(ひし形)のYES/NOは必ず対になっているはずである。
         // 判定の結果、片方(YESのみ/NOのみ)しか見つからない場合はその判定を信用せず、
         // 警告したうえで分岐メモ(CSVの分岐ルート)には使わないようにする。
-        NormalizeYesNoLabelPairs(chart, allWarnings);
+        NormalizeYesNoLabelPairs(chart, allWarnings, diamondsWithExcludedBranch);
 
         // 11. 検証
         var validator = new FlowChartValidator();
@@ -280,7 +280,9 @@ public class ExcelImportService
     // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
     // 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
     // そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
-    private static void ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
+    // 戻り値: この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
+    // NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    private static HashSet<string> ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var predecessors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
@@ -343,12 +345,24 @@ public class ExcelImportService
 
         if (idsToExclude.Count == 0)
         {
-            return;
+            return [];
         }
+
+        // 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
+        // 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
+        // 分岐自身は除外されない(=nodeByIdにまだ残っている)ケースだけを記録しておく。
+        var nodeById = chart.Nodes.ToDictionary(n => n.Id);
+        var diamondsWithExcludedBranch = chart.Edges
+            .Where(e => idsToExclude.Contains(e.ToNodeId) && !idsToExclude.Contains(e.FromNodeId)
+                        && nodeById.TryGetValue(e.FromNodeId, out var fromNode) && fromNode.ShapeType == ShapeType.Diamond)
+            .Select(e => e.FromNodeId)
+            .ToHashSet();
 
         chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
         chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
         chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+
+        return diamondsWithExcludedBranch;
     }
 
     private static HashSet<string> BfsMultiSource(
@@ -383,7 +397,8 @@ public class ExcelImportService
     // (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
     // 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
     // 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
-    private static void NormalizeYesNoLabelPairs(FlowChart chart, List<string> warnings)
+    private static void NormalizeYesNoLabelPairs(
+        FlowChart chart, List<string> warnings, HashSet<string> diamondsWithExcludedBranch)
     {
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
 
@@ -406,10 +421,17 @@ public class ExcelImportService
             }
 
             var found = presentLabels[0];
-            var foundName = found == "Y" ? "YES" : "NO";
-            var missingName = found == "Y" ? "NO" : "YES";
-            warnings.Add(
-                $"[YES/NO不整合] {WarningFormatting.DescribeNode(diamond)} は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+
+            // 反対側の矢印は、開始/終了ノード無し除外(8.)によってその行き先ごと既に除外されている場合、
+            // 別途[開始/終了ノード無し]で理由を警告済みのため、ここでは紛らわしい重複警告を出さない
+            // (ラベルをクリアして分岐メモに使わないようにする点は他のケースと同じ)。
+            if (!diamondsWithExcludedBranch.Contains(diamond.Id))
+            {
+                var foundName = found == "Y" ? "YES" : "NO";
+                var missingName = found == "Y" ? "NO" : "YES";
+                warnings.Add(
+                    $"[YES/NO不整合] {WarningFormatting.DescribeNode(diamond)} は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+            }
 
             foreach (var edge in group.Where(e => e.Label == found))
             {
