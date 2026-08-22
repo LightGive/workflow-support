@@ -87,8 +87,10 @@ internal static class BranchLabelResolver
             if (debugLabels)
             {
                 foreach (var candidate in candidateLabels)
+                {
                     warnings.Add(
                         $"[YES/NOデバッグ] {DescribeDiamond()}: 候補テキスト '{WarningFormatting.Truncate(candidate.Text)}' → {ValueName(candidate.Label!)} と判定");
+                }
             }
 
             if (candidateLabels.Count == 0)
@@ -167,8 +169,10 @@ internal static class BranchLabelResolver
             if (debugLabels)
             {
                 foreach (var (index, label) in assigned)
+                {
                     warnings.Add(
                         $"[YES/NOデバッグ] {DescribeDiamond()} 最終結果: → {DescribeTarget(connections[index].ToNodeId)} = {ValueName(label)}");
+                }
             }
 
             foreach (var (index, label) in assigned)

@@ -108,7 +108,9 @@ public class FlowChartCsvExporter
             lines.Add("関連ファイル: " + string.Join(", ", node.RelatedFiles.Select(StripNewlines)));
         }
         foreach (var remark in node.Remarks)
+        {
             lines.Add("メモ: " + remark);
+        }
 
         return string.Join("\n", lines);
     }

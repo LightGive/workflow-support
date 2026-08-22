@@ -253,13 +253,17 @@ public class ExcelImportService
 
         int edgeSeq = 1;
         foreach (var (fromId, toId, label, _, _, _, _, labelText) in connections.Where(c => !TouchesDatabase(c)))
+        {
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label, labelText));
+        }
 
         var dataConnections = resolver.Resolve(dataConnectors, nodeShapes, xmlIdToNodeId)
             .Concat(connections.Where(TouchesDatabase));
         int dataEdgeSeq = 1;
         foreach (var (fromId, toId, label, _, _, _, _, labelText) in dataConnections)
+        {
             chart.DataEdges.Add(new FlowEdge($"dataEdge{dataEdgeSeq++}", fromId, toId, label, labelText));
+        }
     }
 
     private static void ExcludeIsolatedNodes(FlowChart chart, List<string> allWarnings)
@@ -273,8 +277,10 @@ public class ExcelImportService
             .ToHashSet();
         var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
         foreach (var node in isolatedNodes)
+        {
             allWarnings.Add(
                 $"[孤立シェイプ除外] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は矢印が1本も接続されていないため出力対象から除外しました。");
+        }
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
         chart.DataEdges.RemoveAll(e => !connectedNodeIds.Contains(e.FromNodeId) || !connectedNodeIds.Contains(e.ToNodeId));
     }

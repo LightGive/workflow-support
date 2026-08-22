@@ -48,7 +48,9 @@ internal class SheetDimensionMap
             int min = (int)(col.Min?.Value ?? 1) - 1; // 0-based
             int max = (int)(col.Max?.Value ?? col.Min?.Value ?? 1) - 1;
             for (int i = min; i <= max; i++)
+            {
                 _colWidths[i] = widthPt;
+            }
         }
     }
 
@@ -72,7 +74,9 @@ internal class SheetDimensionMap
         }
         double x = 0;
         for (int i = 0; i < colIndex; i++)
+        {
             x += _colWidths.TryGetValue(i, out var w) ? w : _defaultColumnWidthPt;
+        }
         _colLeftCache[colIndex] = x;
         return x;
     }
@@ -85,7 +89,9 @@ internal class SheetDimensionMap
         }
         double y = 0;
         for (int i = 0; i < rowIndex; i++)
+        {
             y += _rowHeights.TryGetValue(i, out var h) ? h : _defaultRowHeightPt;
+        }
         _rowTopCache[rowIndex] = y;
         return y;
     }

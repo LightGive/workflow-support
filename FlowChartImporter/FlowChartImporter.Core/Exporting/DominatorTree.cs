@@ -20,7 +20,9 @@ internal static class DominatorTree
 
         var postorderIndex = new Dictionary<string, int>();
         for (int i = 0; i < postorder.Count; i++)
+        {
             postorderIndex[postorder[i]] = i;
+        }
 
         // 逆後行順(root が最後 = 最大インデックス)で処理する
         var reversePostorder = Enumerable.Reverse(postorder).ToList();
@@ -107,7 +109,9 @@ internal static class DominatorTree
             return;
         }
         foreach (var next in successors.GetValueOrDefault(nodeId, []))
+        {
             DfsPostorder(next, successors, visited, postorder);
+        }
         postorder.Add(nodeId);
     }
 }
