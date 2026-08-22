@@ -108,10 +108,12 @@ public class ExcelImportService
         return new ImportResult(chart, sortedWarnings);
     }
 
-    // 矩形(Rectangle)はプロセスを表す図形だが、枠線が無い/点線のものはプロセスではなく、
-    // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
-    // テキストボックス・「[」図形はノードには含めない。YES/NOテキストは分岐のラベル判定に、
-    // 「[」図形は近くのノードの備考として使う。
+    /// <summary>
+    /// 矩形(Rectangle)はプロセスを表す図形だが、枠線が無い/点線のものはプロセスではなく、
+    /// 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
+    /// テキストボックス・「[」図形はノードには含めない。YES/NOテキストは分岐のラベル判定に、
+    /// 「[」図形は近くのノードの備考として使う。
+    /// </summary>
     private static (
         List<Internal.ShapeInfo> LineShapes,
         List<Internal.ShapeInfo> DocumentShapes,
@@ -158,7 +160,7 @@ public class ExcelImportService
         return (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes);
     }
 
-    // Line シェイプを ConnectorInfo に変換してコネクタリストに追加する
+    /// <summary>Line シェイプを ConnectorInfo に変換してコネクタリストに追加する。</summary>
     private static void AddLineConnectors(List<Internal.ShapeInfo> lineShapes, List<Internal.ConnectorInfo> connectors)
     {
         foreach (var line in lineShapes)
@@ -285,16 +287,20 @@ public class ExcelImportService
         chart.DataEdges.RemoveAll(e => !connectedNodeIds.Contains(e.FromNodeId) || !connectedNodeIds.Contains(e.ToNodeId));
     }
 
-    // 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
-    // 終了ノード(楕円かつ出次数0)に到達できるかを調べる。どちらか一方でも満たさないノードは、開始・終了の
-    // 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
-    // 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
-    // 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
-    // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
-    // 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
-    // そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
-    // 戻り値: この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
-    // NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    /// <summary>
+    /// 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
+    /// 終了ノード(楕円かつ出次数0)に到達できるかを調べる。どちらか一方でも満たさないノードは、開始・終了の
+    /// 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
+    /// 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
+    /// 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
+    /// (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
+    /// 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
+    /// そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
+    /// </summary>
+    /// <returns>
+    /// この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
+    /// NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    /// </returns>
     private static HashSet<string> ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
@@ -406,10 +412,12 @@ public class ExcelImportService
         return visited;
     }
 
-    // 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
-    // (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
-    // 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
-    // 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
+    /// <summary>
+    /// 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
+    /// (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
+    /// 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
+    /// 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
+    /// </summary>
     private static void NormalizeYesNoLabelPairs(
         FlowChart chart, List<string> warnings, HashSet<string> diamondsWithExcludedBranch)
     {

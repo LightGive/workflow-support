@@ -114,12 +114,14 @@ internal class SheetDimensionMap
     // 96DPI換算のピクセル→ポイント変換係数(1px = 0.75pt)
     private const double PointsPerPixelAt96Dpi = 0.75;
 
-    // Excelのキャラクター幅単位 → ポイント。
-    // ECMA-376 準拠の変換式(pixels = floor(((256*width + floor(128/MDW)) / 256) * MDW))で
-    // 一旦ピクセルに変換し、96DPI換算(1px = 0.75pt)でポイントに変換する。
-    // 単純な「1文字幅 ≈ 7.5pt」という概算は、特に既定幅に近い狭い列で実際の描画位置との
-    // 誤差が大きく(数十pt単位でズレる)、分岐からの角度判定(BranchLabelResolver)のような
-    // 僅かな誤差にも敏感な処理では無視できないため、より正確な式に置き換えている。
+    /// <summary>
+    /// Excelのキャラクター幅単位 → ポイント。
+    /// ECMA-376 準拠の変換式(pixels = floor(((256*width + floor(128/MDW)) / 256) * MDW))で
+    /// 一旦ピクセルに変換し、96DPI換算(1px = 0.75pt)でポイントに変換する。
+    /// 単純な「1文字幅 ≈ 7.5pt」という概算は、特に既定幅に近い狭い列で実際の描画位置との
+    /// 誤差が大きく(数十pt単位でズレる)、分岐からの角度判定(BranchLabelResolver)のような
+    /// 僅かな誤差にも敏感な処理では無視できないため、より正確な式に置き換えている。
+    /// </summary>
     private static double CharacterWidthToPt(double charWidth)
     {
         double pixels = Math.Floor(((256 * charWidth + Math.Floor(128 / MaxDigitWidthPx)) / 256) * MaxDigitWidthPx);

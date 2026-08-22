@@ -17,6 +17,10 @@ namespace FlowChartImporter.Core.Importing;
 /// </summary>
 internal static class BranchLabelResolver
 {
+    /// <summary>
+    /// 矢印自体にテキストが無い分岐(ひし形)の矢印について、近くのYES/NOラベル図形との距離を比較して
+    /// ラベルを解決し、connectionsのLabel/LabelTextに反映する(判定アルゴリズムの詳細はクラスの説明を参照)。
+    /// </summary>
     /// <param name="warnings">
     /// 警告の追加先。矢印の起点が近接していて自動入れ替えが発生した場合に
     /// [YES/NO自動入れ替え] を追加する。debugLabelsがtrueの場合は判定の詳細も [YES/NOデバッグ] として追加する。
@@ -210,13 +214,17 @@ internal static class BranchLabelResolver
     // 全角英字(U+FF21-FF3A, U+FF41-FF5A)と対応する半角英字(ASCII)のコードポイント差
     private const int FullWidthToHalfWidthOffset = 0xFEE0;
 
-    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
-    // (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
+    /// <summary>
+    /// 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
+    /// (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
+    /// </summary>
     private static string NormalizeFullWidthLetters(string text) =>
         new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - FullWidthToHalfWidthOffset) : c).ToArray());
 
-    // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
-    // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
+    /// <summary>
+    /// 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
+    /// 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
+    /// </summary>
     private static (double X, double Y) ConnectorOrigin(ShapeInfo diamond, ResolvedConnection connection)
     {
         var distStart = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);

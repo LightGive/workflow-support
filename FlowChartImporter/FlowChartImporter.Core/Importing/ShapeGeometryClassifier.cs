@@ -37,7 +37,10 @@ internal static class ShapeGeometryClassifier
     // 自由図形の頂点が、ひし形の頂点として許容する誤差の割合(図形の幅・高さの5%)
     private const double DiamondVertexToleranceRatio = 0.05;
 
-    // OpenXML 3.x の ShapeTypeValues は定数として扱えないため InnerText で文字列比較する
+    /// <summary>
+    /// プリセット図形名(a:prstGeom の prst 属性値)から ShapeType を求める。
+    /// OpenXML 3.x の ShapeTypeValues は定数として扱えないため InnerText で文字列比較する。
+    /// </summary>
     public static Models.ShapeType MapPreset(string? preset) => preset switch
     {
         PresetRectangle or PresetFlowChartProcess or PresetFlowChartAlternateProcess or PresetRoundRectangle
@@ -55,8 +58,10 @@ internal static class ShapeGeometryClassifier
         _ => Models.ShapeType.Other,
     };
 
-    // 自由図形(a:custGeom)のパスが、上下左右の中点を頂点とするひし形かどうかを判定する。
-    // 「フローチャート: 判断」プリセットが custGeom に変換保存されているケースを検出するために使う。
+    /// <summary>
+    /// 自由図形(a:custGeom)のパスが、上下左右の中点を頂点とするひし形かどうかを判定する。
+    /// 「フローチャート: 判断」プリセットが custGeom に変換保存されているケースを検出するために使う。
+    /// </summary>
     public static bool IsDiamondPath(CustomGeometry? custGeom)
     {
         var path = custGeom?.GetFirstChild<PathList>()?.Elements<DocumentFormat.OpenXml.Drawing.Path>().FirstOrDefault();
@@ -102,7 +107,10 @@ internal static class ShapeGeometryClassifier
         return HasPointNear(midX, 0) && HasPointNear(w, midY) && HasPointNear(midX, h) && HasPointNear(0, midY);
     }
 
-    // OpenXML 3.x の PresetLineDashValues は定数として扱えないため InnerText で文字列比較する
+    /// <summary>
+    /// 線種(a:prstDash)が実線以外(点線・破線など)かどうかを判定する。
+    /// OpenXML 3.x の PresetLineDashValues は定数として扱えないため InnerText で文字列比較する。
+    /// </summary>
     public static bool IsDashedLine(Outline? outline)
     {
         var dashVal = outline?.GetFirstChild<PresetDash>()?.Val?.InnerText;

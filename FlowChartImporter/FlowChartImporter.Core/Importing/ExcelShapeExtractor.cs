@@ -143,8 +143,10 @@ internal class ExcelShapeExtractor
         return (shapes, connectors, warnings);
     }
 
-    // グループ図形の中身(通常シェイプ・コネクタ・入れ子のグループ)を再帰的に処理し、
-    // 子図形固有の座標系を親の変換と合成した絶対座標系に変換する。
+    /// <summary>
+    /// グループ図形の中身(通常シェイプ・コネクタ・入れ子のグループ)を再帰的に処理し、
+    /// 子図形固有の座標系を親の変換と合成した絶対座標系に変換する。
+    /// </summary>
     private void ProcessGroupShape(
         DwgSheet.GroupShape grpSp,
         GroupTransform parentTransform,
@@ -269,10 +271,12 @@ internal class ExcelShapeExtractor
         };
     }
 
-    // シェイプの位置・サイズを求める。セルアンカーがあれば(from/to のセル位置+列幅・行高から求めた値を)
-    // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることが
-    // あるため、セルアンカーが無い場合(グループ内の子図形、またはOneCellAnchorのサイズ)のみ使う。
-    // アンカーも a:xfrm も無ければ位置不明としてnullを返す。
+    /// <summary>
+    /// シェイプの位置・サイズを求める。セルアンカーがあれば(from/to のセル位置+列幅・行高から求めた値を)
+    /// 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることが
+    /// あるため、セルアンカーが無い場合(グループ内の子図形、またはOneCellAnchorのサイズ)のみ使う。
+    /// アンカーも a:xfrm も無ければ位置不明としてnullを返す。
+    /// </summary>
     private static (double Left, double Top, double Width, double Height)? ResolveShapePosition(
         Transform2D? xfrm, GroupTransform transform,
         double anchorLeft, double anchorTop, double anchorRight, double anchorBottom)
@@ -310,9 +314,11 @@ internal class ExcelShapeExtractor
         return null;
     }
 
-    // コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
-    // ResolveShapePositionと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
-    // どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
+    /// <summary>
+    /// コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
+    /// ResolveShapePositionと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
+    /// どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
+    /// </summary>
     private static ConnectorInfo? ExtractConnector(
         DwgSheet.ConnectionShape cxnSp, GroupTransform transform,
         double fallbackStartX, double fallbackStartY, double fallbackEndX, double fallbackEndY)
@@ -395,7 +401,7 @@ internal class ExcelShapeExtractor
         return null;
     }
 
-    // 点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。
+    /// <summary>点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。</summary>
     private static (double X, double Y) RotatePoint(double x, double y, double centerX, double centerY, double angleRad)
     {
         double dx = x - centerX;

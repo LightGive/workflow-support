@@ -109,8 +109,10 @@ internal class ActorDetector
         return cell.CellValue?.Text ?? string.Empty;
     }
 
-    // SharedStringItem.InnerText はフリガナ(rPh)内のテキストも含めて連結してしまうため、
-    // 表示テキスト(t / r/t)のみを対象に組み立てる。
+    /// <summary>
+    /// SharedStringItem.InnerText はフリガナ(rPh)内のテキストも含めて連結してしまうため、
+    /// 表示テキスト(t / r/t)のみを対象に組み立てる。
+    /// </summary>
     private static string GetSharedStringText(SharedStringItem item)
     {
         var text = string.Concat(item.Elements<Text>().Select(t => t.Text));

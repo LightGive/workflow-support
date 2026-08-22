@@ -72,7 +72,7 @@ public class FlowChartCsvExporter
         return sb.ToString();
     }
 
-    // ── 種類判定 ─────────────────────────────────────────────────
+    /// <summary>ノードの種類(開始/終了/分岐/処理/呼び出し)を、シェイプタイプと入出次数から判定する。</summary>
     private static string ClassifyCategory(FlowNode node, int inDegree, int outDegree, ImportSettings settings)
     {
         if (node.ShapeType == ShapeType.Diamond)
@@ -97,7 +97,7 @@ public class FlowChartCsvExporter
     private static string FormatDisplayName(string format, int number) =>
         string.IsNullOrEmpty(format) ? number.ToString() : format.Replace("{no}", number.ToString());
 
-    // ── 備考 ─────────────────────────────────────────────────────
+    /// <summary>ノードの備考欄(関連ファイル、近くの「[」図形の内容)のテキストを組み立てる。</summary>
     private static string BuildRemarks(FlowNode node)
     {
         var lines = new List<string>();
@@ -118,9 +118,10 @@ public class FlowChartCsvExporter
     private static string StripNewlines(string value) =>
         value.Replace("\r\n", "").Replace("\n", "").Replace("\r", "");
 
-    // ── 分岐ルート判定 ───────────────────────────────────────────
-    // 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、
-    // 通過する方向(出て行く矢印)が一意に定まるものだけを、開始に近い順に列挙する。
+    /// <summary>
+    /// 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、
+    /// 通過する方向(出て行く矢印)が一意に定まるものだけを、開始に近い順に列挙する。
+    /// </summary>
     private static string BuildBranchRoute(
         string nodeId,
         Dictionary<string, string> idom,
@@ -175,8 +176,10 @@ public class FlowChartCsvExporter
         return string.Join(",", parts);
     }
 
-    // fromId から targetId に到達できるかを、avoidId を経由せずに判定する。
-    // 分岐の出口ごとの到達判定で、分岐自身に戻るループ経路を辿らないようにするために使う。
+    /// <summary>
+    /// fromId から targetId に到達できるかを、avoidId を経由せずに判定する。
+    /// 分岐の出口ごとの到達判定で、分岐自身に戻るループ経路を辿らないようにするために使う。
+    /// </summary>
     private static bool CanReach(
         string fromId, string targetId, string avoidId,
         Dictionary<string, List<string>> successors)

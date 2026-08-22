@@ -31,7 +31,7 @@ public class FlowChartValidator
         return warnings;
     }
 
-    // ── 1. 重複エッジ ────────────────────────────────────────────
+    /// <summary>同一の(from, to)ノードペアを持つエッジが2本以上ある場合に警告する。</summary>
     private static void CheckDuplicateEdges(
         FlowChart chart,
         Dictionary<string, FlowNode> nodeById,
@@ -50,7 +50,10 @@ public class FlowChartValidator
         }
     }
 
-    // ── 2. ルート完全性 ──────────────────────────────────────────
+    /// <summary>
+    /// 設定ファイルの routeCheckStartShapeType/routeCheckEndShapeType で指定された開始・終了シェイプタイプを
+    /// 使って、開始ノードから終了ノードへ到達できるルートが存在するか、途中で行き止まりになっていないかを検証する。
+    /// </summary>
     private static void CheckRouteCompleteness(
         FlowChart chart,
         ImportSettings settings,
