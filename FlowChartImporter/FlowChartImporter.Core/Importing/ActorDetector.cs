@@ -5,6 +5,9 @@ namespace FlowChartImporter.Core.Importing;
 
 internal class ActorDetector
 {
+    // セル参照(例: "AB12")の列文字は A〜Z の26文字を基数とした26進数として解釈する
+    private const int AlphabetLetterCount = 26;
+
     public record ActorRange(string Name, int StartRow, int EndRow); // 0始まり、両端含む
 
     public List<ActorRange> Detect(WorkbookPart workbookPart, WorksheetPart worksheetPart)
@@ -129,7 +132,7 @@ internal class ActorDetector
     {
         int col = 0, i = 0;
         while (i < cellRef.Length && char.IsLetter(cellRef[i]))
-            col = col * 26 + (char.ToUpper(cellRef[i++]) - 'A' + 1);
+            col = col * AlphabetLetterCount + (char.ToUpper(cellRef[i++]) - 'A' + 1);
         int row = int.TryParse(cellRef[i..], out var r) ? r - 1 : 0;
         return (col - 1, row); // どちらも0始まり
     }

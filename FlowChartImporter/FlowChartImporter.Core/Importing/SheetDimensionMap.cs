@@ -102,12 +102,17 @@ internal class SheetDimensionMap
     public double GetRowHeight(int rowIndex) =>
         _rowHeights.TryGetValue(rowIndex, out var h) ? h : _defaultRowHeightPt;
 
-    // EMU → ポイント変換(1pt = 12700 EMU)
-    public static double EmuToPt(long emu) => emu / 12700.0;
-    public static double EmuToPt(double emu) => emu / 12700.0;
+    // EMU → ポイント変換の単位(1pt = 12700 EMU)
+    private const double EmuPerPoint = 12700.0;
+
+    public static double EmuToPt(long emu) => emu / EmuPerPoint;
+    public static double EmuToPt(double emu) => emu / EmuPerPoint;
 
     // 既定フォント(Calibri 11)の最大数字幅(ピクセル)。列幅→ピクセル変換に使う。
     private const double MaxDigitWidthPx = 7.0;
+
+    // 96DPI換算のピクセル→ポイント変換係数(1px = 0.75pt)
+    private const double PointsPerPixelAt96Dpi = 0.75;
 
     // Excelのキャラクター幅単位 → ポイント。
     // ECMA-376 準拠の変換式(pixels = floor(((256*width + floor(128/MDW)) / 256) * MDW))で
@@ -118,6 +123,6 @@ internal class SheetDimensionMap
     private static double CharacterWidthToPt(double charWidth)
     {
         double pixels = Math.Floor(((256 * charWidth + Math.Floor(128 / MaxDigitWidthPx)) / 256) * MaxDigitWidthPx);
-        return pixels * 0.75;
+        return pixels * PointsPerPixelAt96Dpi;
     }
 }

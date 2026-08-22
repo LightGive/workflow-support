@@ -31,6 +31,12 @@ internal static class ShapeGeometryClassifier
     // OOXML 線種名 (a:prstDash の val 属性値)
     private const string DashStyleSolid = "solid";
 
+    // OOXML の a:path が w/h(座標空間のサイズ)を省略した場合の既定値
+    private const double DefaultCustomGeometrySize = 21600;
+
+    // 自由図形の頂点が、ひし形の頂点として許容する誤差の割合(図形の幅・高さの5%)
+    private const double DiamondVertexToleranceRatio = 0.05;
+
     // OpenXML 3.x の ShapeTypeValues は定数として扱えないため InnerText で文字列比較する
     public static Models.ShapeType MapPreset(string? preset) => preset switch
     {
@@ -85,10 +91,10 @@ internal static class ShapeGeometryClassifier
             return false;
         }
 
-        double w = path.Width?.Value ?? 21600;
-        double h = path.Height?.Value ?? 21600;
+        double w = path.Width?.Value ?? DefaultCustomGeometrySize;
+        double h = path.Height?.Value ?? DefaultCustomGeometrySize;
         double midX = w / 2.0, midY = h / 2.0;
-        double tolerance = Math.Max(w, h) * 0.05;
+        double tolerance = Math.Max(w, h) * DiamondVertexToleranceRatio;
 
         bool HasPointNear(double x, double y) =>
             distinct.Any(p => Math.Abs(p.X - x) <= tolerance && Math.Abs(p.Y - y) <= tolerance);

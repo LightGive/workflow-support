@@ -207,10 +207,13 @@ internal static class BranchLabelResolver
         return string.Equals(match.Groups[1].Value, "YES", StringComparison.OrdinalIgnoreCase) ? "Y" : "N";
     }
 
+    // 全角英字(U+FF21-FF3A, U+FF41-FF5A)と対応する半角英字(ASCII)のコードポイント差
+    private const int FullWidthToHalfWidthOffset = 0xFEE0;
+
     // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
     // (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
     private static string NormalizeFullWidthLetters(string text) =>
-        new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - 0xFEE0) : c).ToArray());
+        new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - FullWidthToHalfWidthOffset) : c).ToArray());
 
     // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
     // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。

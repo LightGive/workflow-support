@@ -10,6 +10,9 @@ namespace FlowChartImporter.Core.Importing;
 
 internal class ExcelShapeExtractor
 {
+    // OOXML の a:xfrm の rot 属性の単位(1度 = 60,000)
+    private const double RotationUnitsPerDegree = 60000.0;
+
     // グループ図形(xdr:grpSp)内の子図形の座標系(EMU、子座標系原点基準)を
     // ワークシート上の絶対座標系(EMU)に変換するアフィン変換。
     // グループに属さない図形は Identity (変換なし) を使う。
@@ -346,7 +349,7 @@ internal class ExcelShapeExtractor
         {
             double centerX = (left + right) / 2;
             double centerY = (top + bottom) / 2;
-            double angleRad = rotation60000ths / 60000.0 * (Math.PI / 180.0);
+            double angleRad = rotation60000ths / RotationUnitsPerDegree * (Math.PI / 180.0);
             (startX, startY) = RotatePoint(startX, startY, centerX, centerY, angleRad);
             (endX, endY) = RotatePoint(endX, endY, centerX, centerY, angleRad);
         }
