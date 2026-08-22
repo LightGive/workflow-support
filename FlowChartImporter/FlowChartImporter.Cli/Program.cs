@@ -173,7 +173,17 @@ bool writeCsv = !noCsv;
 // ── 設定ファイル読み込み ──────────────────────────────────────
 settingsPath ??= Path.Combine(AppContext.BaseDirectory, "settings.json");
 var settingsExisted = File.Exists(settingsPath);
-var settings = ImportSettingsLoader.Load(settingsPath);
+ImportSettings settings;
+try
+{
+    settings = ImportSettingsLoader.Load(settingsPath);
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"エラー: 設定ファイルの読み込みに失敗しました: {settingsPath}");
+    Console.Error.WriteLine($"  {ex.Message}");
+    return 1;
+}
 if (!settingsExisted)
 {
     Console.Error.WriteLine($"設定ファイルが見つからなかったため、デフォルト値で新規作成しました: {settingsPath}");
