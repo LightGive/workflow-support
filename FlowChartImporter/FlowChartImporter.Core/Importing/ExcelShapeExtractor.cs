@@ -10,6 +10,9 @@ namespace FlowChartImporter.Core.Importing;
 
 internal class ExcelShapeExtractor
 {
+    // OOXML の a:xfrm の rot 属性の単位(1度 = 60,000)
+    private const double RotationUnitsPerDegree = 60000.0;
+
     // グループ図形(xdr:grpSp)内の子図形の座標系(EMU、子座標系原点基準)を
     // ワークシート上の絶対座標系(EMU)に変換するアフィン変換。
     // グループに属さない図形は Identity (変換なし) を使う。
@@ -21,6 +24,19 @@ internal class ExcelShapeExtractor
         public double TransformY(double y) => OffY + y * ScaleY;
         public double ScaleLengthX(double w) => w * ScaleX;
         public double ScaleLengthY(double h) => h * ScaleY;
+    }
+
+    /// <summary>
+    /// セルアンカー(from/toマーカー)から求めた図形・コネクタのボックス(ポイント単位)。
+    /// アンカーが無い場合(グループ内の子図形など)はUnknown(全てNaN)を使う。
+    /// OneCellAnchorのようにサイズ(Right/Bottom)だけ不明な場合はHasSizeがfalseになる。
+    /// </summary>
+    private readonly record struct AnchorBox(double Left, double Top, double Right, double Bottom)
+    {
+        public static readonly AnchorBox Unknown = new(double.NaN, double.NaN, double.NaN, double.NaN);
+
+        public bool HasPosition => !double.IsNaN(Left);
+        public bool HasSize => !double.IsNaN(Right);
     }
 
     /// <summary>
@@ -68,28 +84,17 @@ internal class ExcelShapeExtractor
             }
 
             // セルアンカーベースの座標(行列番号用、かつ図形・コネクタの正式な位置として使う)
-            double anchorLeft = dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu);
-            double anchorTop = dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu);
-            double anchorRight = dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu);
-            double anchorBottom = dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu);
+            var anchorBox = new AnchorBox(
+                Left: dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu),
+                Top: dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu),
+                Right: dimMap.GetColumnLeft(toCol) + SheetDimensionMap.EmuToPt(toColOffEmu),
+                Bottom: dimMap.GetRowTop(toRow) + SheetDimensionMap.EmuToPt(toRowOffEmu));
 
-            // xdr:sp (通常シェイプ)
-            var sp = anchor.GetFirstChild<DwgSheet.Shape>();
-            if (sp != null)
-            {
-                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, anchorRight, anchorBottom, fromRow, fromCol, toRow, toCol, warnings);
-                if (info != null)
-                {
-                    shapes.Add(info);
-                }
-                continue;
-            }
-
-            // xdr:cxnSp (明示的なコネクタ)
+            // xdr:cxnSp (明示的なコネクタ)。TwoCellAnchorのみに現れる(OneCellAnchorでは扱わない)。
             var cxnSp = anchor.GetFirstChild<DwgSheet.ConnectionShape>();
             if (cxnSp != null)
             {
-                var info = ExtractConnector(cxnSp, GroupTransform.Identity, anchorLeft, anchorTop, anchorRight, anchorBottom);
+                var info = ExtractConnector(cxnSp, GroupTransform.Identity, anchorBox);
                 if (info != null)
                 {
                     connectors.Add(info);
@@ -97,12 +102,7 @@ internal class ExcelShapeExtractor
                 continue;
             }
 
-            // xdr:grpSp (グループ化された図形)
-            var grpSp = anchor.GetFirstChild<DwgSheet.GroupShape>();
-            if (grpSp != null)
-            {
-                ProcessGroupShape(grpSp, GroupTransform.Identity, fromRow, fromCol, toRow, toCol, shapes, connectors, warnings);
-            }
+            ProcessShapeOrGroupAnchor(anchor, fromRow, fromCol, toRow, toCol, anchorBox, shapes, connectors, warnings);
         }
 
         foreach (var anchor in wsDr.Elements<OneCellAnchor>())
@@ -114,34 +114,53 @@ internal class ExcelShapeExtractor
                 continue;
             }
 
-            double anchorLeft = dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu);
-            double anchorTop = dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu);
+            // OneCellAnchor には "to" マーカーが無く終点セルからサイズを求められないため、
+            // サイズ(Right/Bottom)は不明(NaN)のまま渡し、a:xfrm のExtentsにフォールバックする
+            // (ExtractShape → ResolveShapePosition内で処理)。
+            var anchorBox = new AnchorBox(
+                Left: dimMap.GetColumnLeft(fromCol) + SheetDimensionMap.EmuToPt(fromColOffEmu),
+                Top: dimMap.GetRowTop(fromRow) + SheetDimensionMap.EmuToPt(fromRowOffEmu),
+                Right: double.NaN,
+                Bottom: double.NaN);
 
-            var sp = anchor.GetFirstChild<DwgSheet.Shape>();
-            if (sp != null)
-            {
-                // OneCellAnchor には "to" マーカーが無く終点セルからサイズを求められないため、
-                // サイズは a:xfrm のExtentsにフォールバックする(ExtractShape内で処理)。
-                var info = ExtractShape(sp, GroupTransform.Identity, anchorLeft, anchorTop, double.NaN, double.NaN, fromRow, fromCol, fromRow, fromCol, warnings);
-                if (info != null)
-                {
-                    shapes.Add(info);
-                }
-                continue;
-            }
-
-            var grpSp = anchor.GetFirstChild<DwgSheet.GroupShape>();
-            if (grpSp != null)
-            {
-                ProcessGroupShape(grpSp, GroupTransform.Identity, fromRow, fromCol, fromRow, fromCol, shapes, connectors, warnings);
-            }
+            ProcessShapeOrGroupAnchor(anchor, fromRow, fromCol, fromRow, fromCol, anchorBox, shapes, connectors, warnings);
         }
 
         return (shapes, connectors, warnings);
     }
 
-    // グループ図形の中身(通常シェイプ・コネクタ・入れ子のグループ)を再帰的に処理し、
-    // 子図形固有の座標系を親の変換と合成した絶対座標系に変換する。
+    /// <summary>
+    /// TwoCellAnchor/OneCellAnchorの両方で共通の、xdr:sp(通常シェイプ)・xdr:grpSp(グループ)の
+    /// 処理を行う(xdr:cxnSpの扱いはTwoCellAnchorのみ異なるため、呼び出し側で個別に処理する)。
+    /// </summary>
+    private void ProcessShapeOrGroupAnchor(
+        OpenXmlElement anchor,
+        int fromRow, int fromCol, int toRow, int toCol,
+        AnchorBox anchorBox,
+        List<ShapeInfo> shapes, List<ConnectorInfo> connectors, List<string> warnings)
+    {
+        var sp = anchor.GetFirstChild<DwgSheet.Shape>();
+        if (sp != null)
+        {
+            var info = ExtractShape(sp, GroupTransform.Identity, anchorBox, fromRow, fromCol, toRow, toCol, warnings);
+            if (info != null)
+            {
+                shapes.Add(info);
+            }
+            return;
+        }
+
+        var grpSp = anchor.GetFirstChild<DwgSheet.GroupShape>();
+        if (grpSp != null)
+        {
+            ProcessGroupShape(grpSp, GroupTransform.Identity, fromRow, fromCol, toRow, toCol, shapes, connectors, warnings);
+        }
+    }
+
+    /// <summary>
+    /// グループ図形の中身(通常シェイプ・コネクタ・入れ子のグループ)を再帰的に処理し、
+    /// 子図形固有の座標系を親の変換と合成した絶対座標系に変換する。
+    /// </summary>
     private void ProcessGroupShape(
         DwgSheet.GroupShape grpSp,
         GroupTransform parentTransform,
@@ -156,7 +175,7 @@ internal class ExcelShapeExtractor
         {
             // グループ内の子図形には独自のアンカー(セル位置)が無いため、フォールバック座標は渡せない。
             // a:xfrm が無い図形は位置不明として ExtractShape 内で除外される。
-            var info = ExtractShape(sp, transform, double.NaN, double.NaN, double.NaN, double.NaN, fromRow, fromCol, toRow, toCol, warnings);
+            var info = ExtractShape(sp, transform, AnchorBox.Unknown, fromRow, fromCol, toRow, toCol, warnings);
             if (info != null)
             {
                 shapes.Add(info);
@@ -165,7 +184,7 @@ internal class ExcelShapeExtractor
 
         foreach (var cxnSp in grpSp.Elements<DwgSheet.ConnectionShape>())
         {
-            var info = ExtractConnector(cxnSp, transform, double.NaN, double.NaN, double.NaN, double.NaN);
+            var info = ExtractConnector(cxnSp, transform, AnchorBox.Unknown);
             if (info != null)
             {
                 connectors.Add(info);
@@ -201,7 +220,7 @@ internal class ExcelShapeExtractor
     private static ShapeInfo? ExtractShape(
         DwgSheet.Shape sp,
         GroupTransform transform,
-        double anchorLeft, double anchorTop, double anchorRight, double anchorBottom,
+        AnchorBox anchorBox,
         int fromRow, int fromCol, int toRow, int toCol,
         List<string> warnings)
     {
@@ -216,7 +235,7 @@ internal class ExcelShapeExtractor
         bool flipH = xfrm?.HorizontalFlip?.Value ?? false;
         bool flipV = xfrm?.VerticalFlip?.Value ?? false;
 
-        var position = ResolveShapePosition(xfrm, transform, anchorLeft, anchorTop, anchorRight, anchorBottom);
+        var position = ResolveShapePosition(xfrm, transform, anchorBox);
         if (position == null)
         {
             // アンカーも a:xfrm も無い場合は、位置不明の図形として読み飛ばす。
@@ -266,21 +285,22 @@ internal class ExcelShapeExtractor
         };
     }
 
-    // シェイプの位置・サイズを求める。セルアンカーがあれば(from/to のセル位置+列幅・行高から求めた値を)
-    // 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることが
-    // あるため、セルアンカーが無い場合(グループ内の子図形、またはOneCellAnchorのサイズ)のみ使う。
-    // アンカーも a:xfrm も無ければ位置不明としてnullを返す。
+    /// <summary>
+    /// シェイプの位置・サイズを求める。セルアンカーがあれば(from/to のセル位置+列幅・行高から求めた値を)
+    /// 正式なものとして使う。a:xfrm の off/ext はExcelが実際の描画に使わないキャッシュ値でズレることが
+    /// あるため、セルアンカーが無い場合(グループ内の子図形、またはOneCellAnchorのサイズ)のみ使う。
+    /// アンカーも a:xfrm も無ければ位置不明としてnullを返す。
+    /// </summary>
     private static (double Left, double Top, double Width, double Height)? ResolveShapePosition(
-        Transform2D? xfrm, GroupTransform transform,
-        double anchorLeft, double anchorTop, double anchorRight, double anchorBottom)
+        Transform2D? xfrm, GroupTransform transform, AnchorBox anchorBox)
     {
-        if (!double.IsNaN(anchorLeft))
+        if (anchorBox.HasPosition)
         {
             double width, height;
-            if (!double.IsNaN(anchorRight))
+            if (anchorBox.HasSize)
             {
-                width = anchorRight - anchorLeft;
-                height = anchorBottom - anchorTop;
+                width = anchorBox.Right - anchorBox.Left;
+                height = anchorBox.Bottom - anchorBox.Top;
             }
             else if (xfrm?.Extents != null)
             {
@@ -292,7 +312,7 @@ internal class ExcelShapeExtractor
                 width = 0;
                 height = 0;
             }
-            return (anchorLeft, anchorTop, width, height);
+            return (anchorBox.Left, anchorBox.Top, width, height);
         }
 
         if (xfrm?.Offset != null && xfrm.Extents != null)
@@ -307,12 +327,13 @@ internal class ExcelShapeExtractor
         return null;
     }
 
-    // コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
-    // ResolveShapePositionと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
-    // どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
+    /// <summary>
+    /// コネクタのバウンディングボックスの対角線を始点・終点とする。ボックスの位置・サイズは、
+    /// ResolveShapePositionと同様の理由でセルアンカー(from/to)から求めた値を正式なものとして使う。
+    /// どちらの端点が始点になるかは a:xfrm の flipH/flipV(あれば)で決める。
+    /// </summary>
     private static ConnectorInfo? ExtractConnector(
-        DwgSheet.ConnectionShape cxnSp, GroupTransform transform,
-        double fallbackStartX, double fallbackStartY, double fallbackEndX, double fallbackEndY)
+        DwgSheet.ConnectionShape cxnSp, GroupTransform transform, AnchorBox fallbackBox)
     {
         var cNvPr = cxnSp.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties;
         if (cNvPr?.Id?.Value == null)
@@ -327,7 +348,7 @@ internal class ExcelShapeExtractor
         // セルアンカーは回転・反転が既に反映された見た目のボックスを表すため rot は適用しない
         // (適用すると回転済み座標を二重に回転させてしまう)。アンカーが無い場合(グループ内の子コネクタ等)は
         // a:xfrm の off/ext(回転前のローカル座標系)をボックスとして使う。
-        var box = ResolveConnectorBox(xfrm, transform, fallbackStartX, fallbackStartY, fallbackEndX, fallbackEndY);
+        var box = ResolveConnectorBox(xfrm, transform, fallbackBox);
         if (box == null)
         {
             // アンカーも a:xfrm も無い場合は、位置不明のコネクタとして読み飛ばす。
@@ -340,13 +361,13 @@ internal class ExcelShapeExtractor
 
         // rot(60,000分の1度単位、時計回りが正)は、a:xfrm のボックスを使った場合のみ、
         // 反転後のボックスをその中心まわりに回転させて実際の見た目の座標に補正する。
-        bool usedXfrmBox = double.IsNaN(fallbackStartX);
+        bool usedXfrmBox = !fallbackBox.HasPosition;
         int rotation60000ths = usedXfrmBox ? (xfrm?.Rotation?.Value ?? 0) : 0;
         if (rotation60000ths != 0)
         {
             double centerX = (left + right) / 2;
             double centerY = (top + bottom) / 2;
-            double angleRad = rotation60000ths / 60000.0 * (Math.PI / 180.0);
+            double angleRad = rotation60000ths / RotationUnitsPerDegree * (Math.PI / 180.0);
             (startX, startY) = RotatePoint(startX, startY, centerX, centerY, angleRad);
             (endX, endY) = RotatePoint(endX, endY, centerX, centerY, angleRad);
         }
@@ -372,12 +393,11 @@ internal class ExcelShapeExtractor
     }
 
     private static (double Left, double Top, double Right, double Bottom)? ResolveConnectorBox(
-        Transform2D? xfrm, GroupTransform transform,
-        double fallbackLeft, double fallbackTop, double fallbackRight, double fallbackBottom)
+        Transform2D? xfrm, GroupTransform transform, AnchorBox fallbackBox)
     {
-        if (!double.IsNaN(fallbackLeft))
+        if (fallbackBox.HasPosition)
         {
-            return (fallbackLeft, fallbackTop, fallbackRight, fallbackBottom);
+            return (fallbackBox.Left, fallbackBox.Top, fallbackBox.Right, fallbackBox.Bottom);
         }
 
         if (xfrm?.Offset != null && xfrm.Extents != null)
@@ -392,7 +412,7 @@ internal class ExcelShapeExtractor
         return null;
     }
 
-    // 点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。
+    /// <summary>点(x,y)を中心(centerX,centerY)まわりに angleRad(時計回り、Y軸下向き前提)だけ回転させる。</summary>
     private static (double X, double Y) RotatePoint(double x, double y, double centerX, double centerY, double angleRad)
     {
         double dx = x - centerX;

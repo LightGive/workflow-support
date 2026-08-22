@@ -17,7 +17,43 @@ public class FlowChartCsvExporter
 {
     private const string VirtualRootId = "__root__";
 
+    /// <summary>CSV出力に必要な各種ルックアップ(種類・表示名・隣接リスト・支配木)をまとめたもの。</summary>
+    private readonly record struct ExportContext(
+        Dictionary<string, FlowNode> NodeById,
+        Dictionary<string, List<FlowEdge>> Outgoing,
+        Dictionary<string, string> Categories,
+        Dictionary<string, string> DisplayNames,
+        Dictionary<string, List<string>> Successors,
+        Dictionary<string, string> Idom);
+
     public string Export(FlowChart chart, ImportSettings settings)
+    {
+        var context = BuildExportContext(chart, settings);
+
+        var sb = new StringBuilder();
+        sb.Append("処理名,種類,分岐ルート,実施主体,内容,備考\r\n");
+
+        // DB(データストア)シェイプは業務フローの処理ではないため、CSVには出力しない(JSONには残す)
+        foreach (var node in chart.Nodes.Where(n => n.ShapeType != ShapeType.Database).OrderBy(n => n.Number))
+        {
+            var route = BuildBranchRoute(
+                node.Id, context.Idom, context.NodeById, context.DisplayNames, context.Outgoing, context.Successors);
+            sb.Append(CsvField(context.DisplayNames[node.Id])).Append(',')
+              .Append(CsvField(context.Categories[node.Id])).Append(',')
+              .Append(CsvField(route)).Append(',')
+              .Append(CsvField(string.Join("/", node.Actors))).Append(',')
+              .Append(CsvField(node.Text)).Append(',')
+              .Append(CsvField(BuildRemarks(node))).Append("\r\n");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// ノード・エッジから、種類・表示名・隣接リスト(仮想ルートから開始ノード群への経路を含む)・
+    /// 支配木といった、CSV行の組み立てに必要なルックアップを事前計算する。
+    /// </summary>
+    private static ExportContext BuildExportContext(FlowChart chart, ImportSettings settings)
     {
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
 
@@ -54,25 +90,10 @@ public class FlowChartCsvExporter
 
         var idom = DominatorTree.Compute(VirtualRootId, successors);
 
-        var sb = new StringBuilder();
-        sb.Append("処理名,種類,分岐ルート,実施主体,内容,備考\r\n");
-
-        // DB(データストア)シェイプは業務フローの処理ではないため、CSVには出力しない(JSONには残す)
-        foreach (var node in chart.Nodes.Where(n => n.ShapeType != ShapeType.Database).OrderBy(n => n.Number))
-        {
-            var route = BuildBranchRoute(node.Id, idom, nodeById, displayNames, outgoing, successors);
-            sb.Append(CsvField(displayNames[node.Id])).Append(',')
-              .Append(CsvField(categories[node.Id])).Append(',')
-              .Append(CsvField(route)).Append(',')
-              .Append(CsvField(string.Join("/", node.Actors))).Append(',')
-              .Append(CsvField(node.Text)).Append(',')
-              .Append(CsvField(BuildRemarks(node))).Append("\r\n");
-        }
-
-        return sb.ToString();
+        return new ExportContext(nodeById, outgoing, categories, displayNames, successors, idom);
     }
 
-    // ── 種類判定 ─────────────────────────────────────────────────
+    /// <summary>ノードの種類(開始/終了/分岐/処理/呼び出し)を、シェイプタイプと入出次数から判定する。</summary>
     private static string ClassifyCategory(FlowNode node, int inDegree, int outDegree, ImportSettings settings)
     {
         if (node.ShapeType == ShapeType.Diamond)
@@ -97,7 +118,7 @@ public class FlowChartCsvExporter
     private static string FormatDisplayName(string format, int number) =>
         string.IsNullOrEmpty(format) ? number.ToString() : format.Replace("{no}", number.ToString());
 
-    // ── 備考 ─────────────────────────────────────────────────────
+    /// <summary>ノードの備考欄(関連ファイル、近くの「[」図形の内容)のテキストを組み立てる。</summary>
     private static string BuildRemarks(FlowNode node)
     {
         var lines = new List<string>();
@@ -108,7 +129,9 @@ public class FlowChartCsvExporter
             lines.Add("関連ファイル: " + string.Join(", ", node.RelatedFiles.Select(StripNewlines)));
         }
         foreach (var remark in node.Remarks)
+        {
             lines.Add("メモ: " + remark);
+        }
 
         return string.Join("\n", lines);
     }
@@ -116,9 +139,10 @@ public class FlowChartCsvExporter
     private static string StripNewlines(string value) =>
         value.Replace("\r\n", "").Replace("\n", "").Replace("\r", "");
 
-    // ── 分岐ルート判定 ───────────────────────────────────────────
-    // 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、
-    // 通過する方向(出て行く矢印)が一意に定まるものだけを、開始に近い順に列挙する。
+    /// <summary>
+    /// 開始からそのノードに至る経路が必ず通過する分岐(diamond)のうち、
+    /// 通過する方向(出て行く矢印)が一意に定まるものだけを、開始に近い順に列挙する。
+    /// </summary>
     private static string BuildBranchRoute(
         string nodeId,
         Dictionary<string, string> idom,
@@ -173,8 +197,10 @@ public class FlowChartCsvExporter
         return string.Join(",", parts);
     }
 
-    // fromId から targetId に到達できるかを、avoidId を経由せずに判定する。
-    // 分岐の出口ごとの到達判定で、分岐自身に戻るループ経路を辿らないようにするために使う。
+    /// <summary>
+    /// fromId から targetId に到達できるかを、avoidId を経由せずに判定する。
+    /// 分岐の出口ごとの到達判定で、分岐自身に戻るループ経路を辿らないようにするために使う。
+    /// </summary>
     private static bool CanReach(
         string fromId, string targetId, string avoidId,
         Dictionary<string, List<string>> successors)

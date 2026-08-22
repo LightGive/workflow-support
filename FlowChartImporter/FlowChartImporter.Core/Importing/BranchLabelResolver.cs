@@ -17,6 +17,10 @@ namespace FlowChartImporter.Core.Importing;
 /// </summary>
 internal static class BranchLabelResolver
 {
+    /// <summary>
+    /// 矢印自体にテキストが無い分岐(ひし形)の矢印について、近くのYES/NOラベル図形との距離を比較して
+    /// ラベルを解決し、connectionsのLabel/LabelTextに反映する(判定アルゴリズムの詳細はクラスの説明を参照)。
+    /// </summary>
     /// <param name="warnings">
     /// 警告の追加先。矢印の起点が近接していて自動入れ替えが発生した場合に
     /// [YES/NO自動入れ替え] を追加する。debugLabelsがtrueの場合は判定の詳細も [YES/NOデバッグ] として追加する。
@@ -44,8 +48,29 @@ internal static class BranchLabelResolver
             return;
         }
 
-        // 各YES/NOラベル図形は、探索範囲が複数の分岐と重なっていても「最も近い1つの分岐」にのみ属させる。
-        var textBoxesByOwnerDiamond = yesNoTextBoxes
+        var textBoxesByOwnerDiamond = GroupTextBoxesByNearestDiamond(yesNoTextBoxes, diamonds, searchRadiusPoints);
+
+        var connectionsByDiamond = connections
+            .Select((connection, index) => (connection, index))
+            .Where(t => nodeShapeById.TryGetValue(t.connection.FromNodeId, out var shape)
+                        && shape.ShapeType == ShapeType.Diamond)
+            .GroupBy(t => t.connection.FromNodeId);
+
+        foreach (var group in connectionsByDiamond)
+        {
+            var diamond = nodeShapeById[group.Key];
+            ResolveLabelsForDiamond(
+                diamond, group.ToList(), textBoxesByOwnerDiamond, connections, nodeShapeById, warnings, debugLabels);
+        }
+    }
+
+    /// <summary>
+    /// 各YES/NOラベル図形は、探索範囲が複数の分岐と重なっていても「最も近い1つの分岐」にのみ属させる。
+    /// </summary>
+    private static Dictionary<ShapeInfo, IReadOnlyList<ShapeInfo>> GroupTextBoxesByNearestDiamond(
+        IReadOnlyList<ShapeInfo> yesNoTextBoxes, List<ShapeInfo> diamonds, double searchRadiusPoints)
+    {
+        return yesNoTextBoxes
             .Select(tb => (TextBox: tb, Nearest: diamonds
                 .Select(d => (Diamond: d, Dist: GeometryUtils.Distance(d.CenterX, d.CenterY, tb.CenterX, tb.CenterY)))
                 .OrderBy(t => t.Dist)
@@ -53,132 +78,157 @@ internal static class BranchLabelResolver
             .Where(t => t.Nearest.Dist <= searchRadiusPoints)
             .GroupBy(t => t.Nearest.Diamond, t => t.TextBox)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<ShapeInfo>)g.ToList());
+    }
 
-        var indexedByFromNode = connections
-            .Select((connection, index) => (connection, index))
-            .Where(t => nodeShapeById.TryGetValue(t.connection.FromNodeId, out var shape)
-                        && shape.ShapeType == ShapeType.Diamond)
-            .GroupBy(t => t.connection.FromNodeId);
+    /// <summary>
+    /// 1つの分岐(ひし形)から出る矢印のうちテキストが無いものについて、近くのYES/NOラベル図形からラベルを
+    /// 解決し、connectionsに反映する。見つかったラベル候補が無い場合は何もしない。
+    /// </summary>
+    private static void ResolveLabelsForDiamond(
+        ShapeInfo diamond,
+        List<(ResolvedConnection connection, int index)> group,
+        IReadOnlyDictionary<ShapeInfo, IReadOnlyList<ShapeInfo>> textBoxesByOwnerDiamond,
+        List<ResolvedConnection> connections,
+        IReadOnlyDictionary<string, ShapeInfo> nodeShapeById,
+        List<string> warnings,
+        bool debugLabels)
+    {
+        string DescribeDiamond() =>
+            $"'{WarningFormatting.Truncate(diamond.Text)}' (行{diamond.AnchorFromRow + 1}, 列{diamond.AnchorFromCol + 1})";
+        string DescribeTarget(string toNodeId) =>
+            nodeShapeById.TryGetValue(toNodeId, out var target) ? $"'{WarningFormatting.Truncate(target.Text)}'" : "(不明)";
+        string ValueName(string v) => v == "Y" ? "YES" : "NO";
 
-        foreach (var group in indexedByFromNode)
+        if (!textBoxesByOwnerDiamond.TryGetValue(diamond, out var ownTextBoxes))
         {
-            var diamond = nodeShapeById[group.Key];
-            string DescribeDiamond() =>
-                $"'{WarningFormatting.Truncate(diamond.Text)}' (行{diamond.AnchorFromRow + 1}, 列{diamond.AnchorFromCol + 1})";
-            string DescribeTarget(string toNodeId) =>
-                nodeShapeById.TryGetValue(toNodeId, out var target) ? $"'{WarningFormatting.Truncate(target.Text)}'" : "(不明)";
-            string ValueName(string v) => v == "Y" ? "YES" : "NO";
-
-            if (!textBoxesByOwnerDiamond.TryGetValue(diamond, out var ownTextBoxes))
+            if (debugLabels && group.Any(t => t.connection.Label == null))
             {
-                if (debugLabels && group.Any(t => t.connection.Label == null))
-                {
-                    warnings.Add(
-                        $"[YES/NOデバッグ] {DescribeDiamond()}: 検索範囲(branchLabelSearchRadiusPoints)内にYES/NOラベル候補が見つかりませんでした。");
-                }
-                continue;
+                warnings.Add(
+                    $"[YES/NOデバッグ] {DescribeDiamond()}: 検索範囲(branchLabelSearchRadiusPoints)内にYES/NOラベル候補が見つかりませんでした。");
             }
+            return;
+        }
 
-            var candidateLabels = ownTextBoxes
-                .Select(tb => (Label: MatchYesNo(tb.Text), Text: tb.Text, tb.CenterX, tb.CenterY))
-                .Where(t => t.Label != null)
-                .ToList();
+        var candidateLabels = ownTextBoxes
+            .Select(tb => (Label: MatchYesNo(tb.Text), Text: tb.Text, tb.CenterX, tb.CenterY))
+            .Where(t => t.Label != null)
+            .ToList();
 
-            if (debugLabels)
+        if (debugLabels)
+        {
+            foreach (var candidate in candidateLabels)
             {
-                foreach (var candidate in candidateLabels)
-                    warnings.Add(
-                        $"[YES/NOデバッグ] {DescribeDiamond()}: 候補テキスト '{WarningFormatting.Truncate(candidate.Text)}' → {ValueName(candidate.Label!)} と判定");
+                warnings.Add(
+                    $"[YES/NOデバッグ] {DescribeDiamond()}: 候補テキスト '{WarningFormatting.Truncate(candidate.Text)}' → {ValueName(candidate.Label!)} と判定");
             }
+        }
 
-            if (candidateLabels.Count == 0)
+        if (candidateLabels.Count == 0)
+        {
+            return;
+        }
+
+        var distinctValues = candidateLabels.Select(l => l.Label!).Distinct().ToList();
+
+        var unlabeled = group.Where(t => t.connection.Label == null).ToList();
+        if (unlabeled.Count == 0)
+        {
+            return;
+        }
+
+        // 矢印ごとに、値(YES/NO)ごとの最短距離と、その最短距離を持つ候補図形(元のテキストを
+        // LabelTextとして残すため)を求める。
+        var nearestByValue = unlabeled.ToDictionary(
+            u => u.index,
+            u =>
             {
-                continue;
-            }
+                var origin = ConnectorOrigin(diamond, u.connection);
+                return distinctValues.ToDictionary(
+                    v => v,
+                    v => candidateLabels
+                        .Where(l => l.Label == v)
+                        .Select(l => (l.Text, Distance: GeometryUtils.Distance(origin.X, origin.Y, l.CenterX, l.CenterY)))
+                        .OrderBy(t => t.Distance)
+                        .First());
+            });
+        var distanceByValue = nearestByValue.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.ToDictionary(v => v.Key, v => v.Value.Distance));
 
-            var distinctValues = candidateLabels.Select(l => l.Label!).Distinct().ToList();
+        // まず、矢印ごとに独立して最も近い値を選ぶ。
+        var assigned = unlabeled.ToDictionary(
+            u => u.index,
+            u => distanceByValue[u.index].OrderBy(kv => kv.Value).First().Key);
 
-            var unlabeled = group.Where(t => t.connection.Label == null).ToList();
-            if (unlabeled.Count == 0)
+        if (debugLabels)
+        {
+            foreach (var u in unlabeled)
             {
-                continue;
+                var dists = string.Join(", ", distanceByValue[u.index].Select(kv => $"{ValueName(kv.Key)}={kv.Value:F1}pt"));
+                warnings.Add(
+                    $"[YES/NOデバッグ] {DescribeDiamond()} → {DescribeTarget(u.connection.ToNodeId)}: {dists} → 初期選択={ValueName(assigned[u.index])}");
             }
+        }
 
-            // 矢印ごとに、値(YES/NO)ごとの最短距離と、その最短距離を持つ候補図形(元のテキストを
-            // LabelTextとして残すため)を求める。
-            var nearestByValue = unlabeled.ToDictionary(
-                u => u.index,
-                u =>
-                {
-                    var origin = ConnectorOrigin(diamond, u.connection);
-                    return distinctValues.ToDictionary(
-                        v => v,
-                        v => candidateLabels
-                            .Where(l => l.Label == v)
-                            .Select(l => (l.Text, Distance: GeometryUtils.Distance(origin.X, origin.Y, l.CenterX, l.CenterY)))
-                            .OrderBy(t => t.Distance)
-                            .First());
-                });
-            var distanceByValue = nearestByValue.ToDictionary(
-                kv => kv.Key,
-                kv => kv.Value.ToDictionary(v => v.Key, v => v.Value.Distance));
+        ApplySwapHeuristic(distinctValues, assigned, distanceByValue, connections, warnings, DescribeDiamond, DescribeTarget, ValueName);
 
-            // まず、矢印ごとに独立して最も近い値を選ぶ。
-            var assigned = unlabeled.ToDictionary(
-                u => u.index,
-                u => distanceByValue[u.index].OrderBy(kv => kv.Value).First().Key);
-
-            if (debugLabels)
-            {
-                foreach (var u in unlabeled)
-                {
-                    var dists = string.Join(", ", distanceByValue[u.index].Select(kv => $"{ValueName(kv.Key)}={kv.Value:F1}pt"));
-                    warnings.Add(
-                        $"[YES/NOデバッグ] {DescribeDiamond()} → {DescribeTarget(u.connection.ToNodeId)}: {dists} → 初期選択={ValueName(assigned[u.index])}");
-                }
-            }
-
-            // 選ばれなかった値がある場合、距離の比が最も1に近い矢印を1本入れ替える(移動元が1本しか
-            // ない場合は入れ替えると空になるだけなのでスキップ)。
-            if (distinctValues.Count == 2)
-            {
-                foreach (var missingValue in distinctValues.Where(v => !assigned.Values.Contains(v)))
-                {
-                    var otherValue = distinctValues.First(v => v != missingValue);
-                    var otherGroup = assigned.Where(kv => kv.Value == otherValue).Select(kv => kv.Key).ToList();
-                    if (otherGroup.Count <= 1)
-                    {
-                        continue;
-                    }
-
-                    var swapIndex = otherGroup
-                        .OrderBy(i => distanceByValue[i][missingValue] / distanceByValue[i][otherValue])
-                        .First();
-                    assigned[swapIndex] = missingValue;
-
-                    // 矢印の起点が近接していたため全ての矢印が同じ値を独立に選んでしまい、
-                    // 1本を自動的に反対の値へ入れ替えた。誤判定の可能性があるため必ず警告する。
-                    warnings.Add(
-                        $"[YES/NO自動入れ替え] {DescribeDiamond()} から {DescribeTarget(connections[swapIndex].ToNodeId)} への矢印を、"
-                        + $"矢印の起点が近接していたため {ValueName(otherValue)} から {ValueName(missingValue)} に自動修正しました。分岐からの矢印の配置をご確認ください。");
-                }
-            }
-
-            if (debugLabels)
-            {
-                foreach (var (index, label) in assigned)
-                    warnings.Add(
-                        $"[YES/NOデバッグ] {DescribeDiamond()} 最終結果: → {DescribeTarget(connections[index].ToNodeId)} = {ValueName(label)}");
-            }
-
+        if (debugLabels)
+        {
             foreach (var (index, label) in assigned)
             {
-                connections[index] = connections[index] with
-                {
-                    Label = label,
-                    LabelText = nearestByValue[index][label].Text,
-                };
+                warnings.Add(
+                    $"[YES/NOデバッグ] {DescribeDiamond()} 最終結果: → {DescribeTarget(connections[index].ToNodeId)} = {ValueName(label)}");
             }
+        }
+
+        foreach (var (index, label) in assigned)
+        {
+            connections[index] = connections[index] with
+            {
+                Label = label,
+                LabelText = nearestByValue[index][label].Text,
+            };
+        }
+    }
+
+    /// <summary>
+    /// 独立判定(矢印ごとに最も近い値を選ぶ)の結果、選ばれなかった値がある場合、距離の比が最も1に近い
+    /// (=入れ替えても不自然でない)矢印を1本、選ばれなかった値へ入れ替える(assignedを直接更新する)。
+    /// 移動元が1本しかない場合は入れ替えると空になるだけなのでスキップする。
+    /// これは距離だけに基づくヒューリスティックであり誤判定の可能性があるため、発生時は必ず警告する。
+    /// </summary>
+    private static void ApplySwapHeuristic(
+        List<string> distinctValues,
+        Dictionary<int, string> assigned,
+        Dictionary<int, Dictionary<string, double>> distanceByValue,
+        List<ResolvedConnection> connections,
+        List<string> warnings,
+        Func<string> describeDiamond,
+        Func<string, string> describeTarget,
+        Func<string, string> valueName)
+    {
+        if (distinctValues.Count != 2)
+        {
+            return;
+        }
+
+        foreach (var missingValue in distinctValues.Where(v => !assigned.Values.Contains(v)))
+        {
+            var otherValue = distinctValues.First(v => v != missingValue);
+            var otherGroup = assigned.Where(kv => kv.Value == otherValue).Select(kv => kv.Key).ToList();
+            if (otherGroup.Count <= 1)
+            {
+                continue;
+            }
+
+            var swapIndex = otherGroup
+                .OrderBy(i => distanceByValue[i][missingValue] / distanceByValue[i][otherValue])
+                .First();
+            assigned[swapIndex] = missingValue;
+
+            warnings.Add(
+                $"[YES/NO自動入れ替え] {describeDiamond()} から {describeTarget(connections[swapIndex].ToNodeId)} への矢印を、"
+                + $"矢印の起点が近接していたため {valueName(otherValue)} から {valueName(missingValue)} に自動修正しました。分岐からの矢印の配置をご確認ください。");
         }
     }
 
@@ -203,13 +253,20 @@ internal static class BranchLabelResolver
         return string.Equals(match.Groups[1].Value, "YES", StringComparison.OrdinalIgnoreCase) ? "Y" : "N";
     }
 
-    // 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
-    // (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
-    private static string NormalizeFullWidthLetters(string text) =>
-        new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - 0xFEE0) : c).ToArray());
+    // 全角英字(U+FF21-FF3A, U+FF41-FF5A)と対応する半角英字(ASCII)のコードポイント差
+    private const int FullWidthToHalfWidthOffset = 0xFEE0;
 
-    // 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
-    // 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
+    /// <summary>
+    /// 全角英字(Ａ-Ｚ、ａ-ｚ)を対応する半角英字に変換する。それ以外の文字はそのまま残す
+    /// (YES/NO以外の部分、例えば末尾の説明文はそのまま保持する必要があるため、除去はしない)。
+    /// </summary>
+    private static string NormalizeFullWidthLetters(string text) =>
+        new(text.Select(c => c is >= 'Ａ' and <= 'Ｚ' or >= 'ａ' and <= 'ｚ' ? (char)(c - FullWidthToHalfWidthOffset) : c).ToArray());
+
+    /// <summary>
+    /// 矢印(コネクタ)の分岐側の端点(=矢印の起点)。
+    /// 矢印の始点・終点のうち分岐の中心に近い方を、分岐側の端点とみなす。
+    /// </summary>
     private static (double X, double Y) ConnectorOrigin(ShapeInfo diamond, ResolvedConnection connection)
     {
         var distStart = GeometryUtils.Distance(diamond.CenterX, diamond.CenterY, connection.StartX, connection.StartY);

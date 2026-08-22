@@ -108,10 +108,12 @@ public class ExcelImportService
         return new ImportResult(chart, sortedWarnings);
     }
 
-    // 矩形(Rectangle)はプロセスを表す図形だが、枠線が無い/点線のものはプロセスではなく、
-    // 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
-    // テキストボックス・「[」図形はノードには含めない。YES/NOテキストは分岐のラベル判定に、
-    // 「[」図形は近くのノードの備考として使う。
+    /// <summary>
+    /// 矩形(Rectangle)はプロセスを表す図形だが、枠線が無い/点線のものはプロセスではなく、
+    /// 分岐先のYES/NOラベルやその他の注記(テキストボックス相当)として使われている。
+    /// テキストボックス・「[」図形はノードには含めない。YES/NOテキストは分岐のラベル判定に、
+    /// 「[」図形は近くのノードの備考として使う。
+    /// </summary>
     private static (
         List<Internal.ShapeInfo> LineShapes,
         List<Internal.ShapeInfo> DocumentShapes,
@@ -158,7 +160,7 @@ public class ExcelImportService
         return (lineShapes, documentShapes, nodeShapes, yesNoTextBoxes, remarkTextBoxes);
     }
 
-    // Line シェイプを ConnectorInfo に変換してコネクタリストに追加する
+    /// <summary>Line シェイプを ConnectorInfo に変換してコネクタリストに追加する。</summary>
     private static void AddLineConnectors(List<Internal.ShapeInfo> lineShapes, List<Internal.ConnectorInfo> connectors)
     {
         foreach (var line in lineShapes)
@@ -253,13 +255,17 @@ public class ExcelImportService
 
         int edgeSeq = 1;
         foreach (var (fromId, toId, label, _, _, _, _, labelText) in connections.Where(c => !TouchesDatabase(c)))
+        {
             chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label, labelText));
+        }
 
         var dataConnections = resolver.Resolve(dataConnectors, nodeShapes, xmlIdToNodeId)
             .Concat(connections.Where(TouchesDatabase));
         int dataEdgeSeq = 1;
         foreach (var (fromId, toId, label, _, _, _, _, labelText) in dataConnections)
+        {
             chart.DataEdges.Add(new FlowEdge($"dataEdge{dataEdgeSeq++}", fromId, toId, label, labelText));
+        }
     }
 
     private static void ExcludeIsolatedNodes(FlowChart chart, List<string> allWarnings)
@@ -273,23 +279,54 @@ public class ExcelImportService
             .ToHashSet();
         var isolatedNodes = chart.Nodes.Where(n => !connectedNodeIds.Contains(n.Id)).ToList();
         foreach (var node in isolatedNodes)
+        {
             allWarnings.Add(
                 $"[孤立シェイプ除外] {WarningFormatting.DescribeShape(node.Text, node.Actors, node.ShapeType)} は矢印が1本も接続されていないため出力対象から除外しました。");
+        }
         chart.Nodes.RemoveAll(n => !connectedNodeIds.Contains(n.Id));
         chart.DataEdges.RemoveAll(e => !connectedNodeIds.Contains(e.FromNodeId) || !connectedNodeIds.Contains(e.ToNodeId));
     }
 
-    // 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
-    // 終了ノード(楕円かつ出次数0)に到達できるかを調べる。どちらか一方でも満たさないノードは、開始・終了の
-    // 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
-    // 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
-    // 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
-    // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
-    // 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
-    // そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
-    // 戻り値: この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
-    // NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    /// <summary>
+    /// 各ノードについて、開始ノード(楕円かつ入次数0)から矢印をたどって到達できるか、および矢印をたどって
+    /// 終了ノード(楕円かつ出次数0)に到達できるかを調べる。どちらか一方でも満たさないノードは、開始・終了の
+    /// 一連の流れに属さない断片的な処理とみなし、出力対象(JSON/CSV)から除外する。
+    /// 判定を連結成分ではなくノード単位で行うのは、開始・終了が揃った一塊の中に「開始からは辿り着けないが
+    /// 終了には合流するだけの、無関係なプロセス」が混じっているケースを正しく除外するため。
+    /// (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
+    /// 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
+    /// そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
+    /// </summary>
+    /// <returns>
+    /// この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
+    /// NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    /// </returns>
     private static HashSet<string> ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
+    {
+        var (successors, predecessors, inDegree, outDegree) = BuildAdjacency(chart);
+        var idsToExclude = DetermineNodesOffStartToEndPath(chart, successors, predecessors, inDegree, outDegree, allWarnings);
+
+        if (idsToExclude.Count == 0)
+        {
+            return [];
+        }
+
+        var diamondsWithExcludedBranch = FindDiamondsWithExcludedBranch(chart, idsToExclude);
+
+        chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
+        chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+        chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+
+        return diamondsWithExcludedBranch;
+    }
+
+    /// <summary>chart.Edgesから、ノードごとの後続・先行ノード一覧と入次数・出次数を求める。</summary>
+    private static (
+        Dictionary<string, List<string>> Successors,
+        Dictionary<string, List<string>> Predecessors,
+        Dictionary<string, int> InDegree,
+        Dictionary<string, int> OutDegree
+        ) BuildAdjacency(FlowChart chart)
     {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var predecessors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
@@ -314,7 +351,21 @@ public class ExcelImportService
                 inDegree[edge.ToNodeId]++;
             }
         }
+        return (successors, predecessors, inDegree, outDegree);
+    }
 
+    /// <summary>
+    /// 開始ノードから矢印を辿って到達できないか、終了ノードへ矢印を辿って到達できないノードを求め、
+    /// 警告したうえでそのIDを返す(実際の除外は呼び出し側で行う)。
+    /// </summary>
+    private static HashSet<string> DetermineNodesOffStartToEndPath(
+        FlowChart chart,
+        Dictionary<string, List<string>> successors,
+        Dictionary<string, List<string>> predecessors,
+        Dictionary<string, int> inDegree,
+        Dictionary<string, int> outDegree,
+        List<string> allWarnings)
+    {
         var startIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && inDegree[n.Id] == 0).Select(n => n.Id);
         var endIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && outDegree[n.Id] == 0).Select(n => n.Id);
 
@@ -350,26 +401,22 @@ public class ExcelImportService
             idsToExclude.Add(node.Id);
         }
 
-        if (idsToExclude.Count == 0)
-        {
-            return [];
-        }
+        return idsToExclude;
+    }
 
-        // 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
-        // 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
-        // 分岐自身は除外されない(=nodeByIdにまだ残っている)ケースだけを記録しておく。
+    /// <summary>
+    /// 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
+    /// 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
+    /// 分岐自身は除外されない(=idsToExcludeに含まれない)ケースだけを求める。
+    /// </summary>
+    private static HashSet<string> FindDiamondsWithExcludedBranch(FlowChart chart, HashSet<string> idsToExclude)
+    {
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
-        var diamondsWithExcludedBranch = chart.Edges
+        return chart.Edges
             .Where(e => idsToExclude.Contains(e.ToNodeId) && !idsToExclude.Contains(e.FromNodeId)
                         && nodeById.TryGetValue(e.FromNodeId, out var fromNode) && fromNode.ShapeType == ShapeType.Diamond)
             .Select(e => e.FromNodeId)
             .ToHashSet();
-
-        chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
-        chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
-        chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
-
-        return diamondsWithExcludedBranch;
     }
 
     private static HashSet<string> BfsMultiSource(
@@ -400,10 +447,12 @@ public class ExcelImportService
         return visited;
     }
 
-    // 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
-    // (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
-    // 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
-    // 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
+    /// <summary>
+    /// 分岐(ひし形)から出るYES/NOラベルは、原則としてYESの矢印とNOの矢印が1本ずつ対で存在するはずである。
+    /// (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
+    /// 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
+    /// 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
+    /// </summary>
     private static void NormalizeYesNoLabelPairs(
         FlowChart chart, List<string> warnings, HashSet<string> diamondsWithExcludedBranch)
     {

@@ -36,13 +36,19 @@ public class DefaultNodeNumberingStrategy : INodeNumberingStrategy
             .ToList();
 
         for (int i = 0; i < ordered.Count; i++)
+        {
             ordered[i].Number = i;
+        }
 
         int next = ordered.Count;
         foreach (var node in numberedNodes.Where(n => n.Position == null))
+        {
             node.Number = next++;
+        }
 
         foreach (var node in nodes.Where(n => n.ShapeType == ShapeType.Database))
+        {
             node.Number = next++;
+        }
     }
 }

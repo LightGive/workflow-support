@@ -297,7 +297,9 @@ static void PrintSheetNames(string filePath)
         }
         Console.Error.WriteLine("利用可能なシート:");
         foreach (var sheet in sheets)
+        {
             Console.Error.WriteLine($"  - {sheet.Name?.Value}");
+        }
     }
     catch
     {
