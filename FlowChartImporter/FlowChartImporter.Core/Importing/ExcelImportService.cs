@@ -28,7 +28,12 @@ public class ExcelImportService
     /// 一番左(A列)の実施主体名がこの文字列と一致する行のシェイプ・テキストを無視する。
     /// nullまたは空文字の場合は何も無視しない。
     /// </param>
-    public ImportResult Import(string filePath, string sheetName, int minRow = 1, string? ignoreActor = null)
+    /// <param name="debugLabels">
+    /// trueの場合、分岐(ひし形)のYES/NOラベル判定の詳細(候補・矢印ごとの距離・最終結果)を
+    /// [YES/NOデバッグ] としてWarningsに追加する(--debug-labelsオプション用)。
+    /// </param>
+    public ImportResult Import(
+        string filePath, string sheetName, int minRow = 1, string? ignoreActor = null, bool debugLabels = false)
     {
         using var doc = SpreadsheetDocument.Open(filePath, isEditable: false);
         var workbookPart = doc.WorkbookPart
@@ -72,7 +77,7 @@ public class ExcelImportService
             selectValue: s => s.Text.Trim(), addValue: (node, text) => node.Remarks.Add(text));
 
         // 6. コネクタをエッジに変換
-        ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes);
+        ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes, allWarnings, debugLabels);
 
         // 7. 矢印で他のノードと接続されていない孤立したシェイプは、
         // 業務フローとして意味を持たないため出力対象(JSON/CSV)から除外する。
@@ -81,7 +86,7 @@ public class ExcelImportService
 
         // 8. 開始ノードから終了ノードまでの経路上に無いノード(例: 開始からは辿り着けないが終了には
         // 合流するだけの、無関係な処理)は断片的な処理とみなし、出力対象から除外する。
-        ExcludeNodesOffStartToEndPath(chart, allWarnings);
+        var diamondsWithExcludedBranch = ExcludeNodesOffStartToEndPath(chart, allWarnings);
 
         // 9. ノード番号を採番(矢印で接続されたノードのみが対象)
         _numberingStrategy.AssignNumbers(chart.Nodes);
@@ -89,7 +94,7 @@ public class ExcelImportService
         // 10. 分岐(ひし形)のYES/NOは必ず対になっているはずである。
         // 判定の結果、片方(YESのみ/NOのみ)しか見つからない場合はその判定を信用せず、
         // 警告したうえで分岐メモ(CSVの分岐ルート)には使わないようにする。
-        NormalizeYesNoLabelPairs(chart, allWarnings);
+        NormalizeYesNoLabelPairs(chart, allWarnings, diamondsWithExcludedBranch);
 
         // 11. 検証
         var validator = new FlowChartValidator();
@@ -219,7 +224,9 @@ public class ExcelImportService
         List<Internal.ShapeInfo> nodeShapes,
         Dictionary<uint, string> xmlIdToNodeId,
         List<(Internal.ShapeInfo Shape, FlowNode Node)> nodeMap,
-        List<Internal.ShapeInfo> yesNoTextBoxes)
+        List<Internal.ShapeInfo> yesNoTextBoxes,
+        List<string> allWarnings,
+        bool debugLabels)
     {
         // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れとしては扱わない
         // (孤立ノード判定・開始/終了到達判定・分岐ラベル判定・CSV出力の対象外)。
@@ -233,7 +240,7 @@ public class ExcelImportService
         // 矢印自体にテキストが無い分岐について、近くのYES/NOテキストボックスからラベルを補う
         var nodeShapeById = nodeMap.ToDictionary(t => t.Node.Id, t => t.Shape);
         BranchLabelResolver.ResolveMissingLabels(
-            connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints);
+            connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints, allWarnings, debugLabels);
 
         // DB(データストア)シェイプに繋がる矢印は、線種が実線でもデータのやり取りを表すとみなし、
         // 点線の矢印と同様に業務フローのエッジ(Edges)ではなくDataEdgesとして扱う。
@@ -245,14 +252,14 @@ public class ExcelImportService
             databaseNodeIds.Contains(c.FromNodeId) || databaseNodeIds.Contains(c.ToNodeId);
 
         int edgeSeq = 1;
-        foreach (var (fromId, toId, label, _, _, _, _) in connections.Where(c => !TouchesDatabase(c)))
-            chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label));
+        foreach (var (fromId, toId, label, _, _, _, _, labelText) in connections.Where(c => !TouchesDatabase(c)))
+            chart.Edges.Add(new FlowEdge($"edge{edgeSeq++}", fromId, toId, label, labelText));
 
         var dataConnections = resolver.Resolve(dataConnectors, nodeShapes, xmlIdToNodeId)
             .Concat(connections.Where(TouchesDatabase));
         int dataEdgeSeq = 1;
-        foreach (var (fromId, toId, label, _, _, _, _) in dataConnections)
-            chart.DataEdges.Add(new FlowEdge($"dataEdge{dataEdgeSeq++}", fromId, toId, label));
+        foreach (var (fromId, toId, label, _, _, _, _, labelText) in dataConnections)
+            chart.DataEdges.Add(new FlowEdge($"dataEdge{dataEdgeSeq++}", fromId, toId, label, labelText));
     }
 
     private static void ExcludeIsolatedNodes(FlowChart chart, List<string> allWarnings)
@@ -280,7 +287,9 @@ public class ExcelImportService
     // (孤立シェイプ除外を先に行っているため、ここで扱うノードは必ず矢印(EdgesまたはDataEdges)を
     // 1本以上持つ。業務フローのEdgesを1本も持たない(DataEdgesのみで繋がっている)ノードは、
     // そもそも業務フローの経路に参加していないため、この判定の対象外として無条件に残す)
-    private static void ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
+    // 戻り値: この除外によって出ていく矢印(YESまたはNO)の行き先ノードごと除外された分岐(ひし形)のID。
+    // NormalizeYesNoLabelPairsで、除外が原因の片肺状態と純粋なラベル未検出とを区別するために使う。
+    private static HashSet<string> ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var predecessors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
@@ -343,12 +352,24 @@ public class ExcelImportService
 
         if (idsToExclude.Count == 0)
         {
-            return;
+            return [];
         }
+
+        // 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
+        // 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
+        // 分岐自身は除外されない(=nodeByIdにまだ残っている)ケースだけを記録しておく。
+        var nodeById = chart.Nodes.ToDictionary(n => n.Id);
+        var diamondsWithExcludedBranch = chart.Edges
+            .Where(e => idsToExclude.Contains(e.ToNodeId) && !idsToExclude.Contains(e.FromNodeId)
+                        && nodeById.TryGetValue(e.FromNodeId, out var fromNode) && fromNode.ShapeType == ShapeType.Diamond)
+            .Select(e => e.FromNodeId)
+            .ToHashSet();
 
         chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
         chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
         chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+
+        return diamondsWithExcludedBranch;
     }
 
     private static HashSet<string> BfsMultiSource(
@@ -383,7 +404,8 @@ public class ExcelImportService
     // (矢印自体のテキスト・近くのYES/NOラベル図形どちらから判定した場合も対象)
     // 判定の結果、片方しか見つからない場合はその判定自体を信用できないとみなし、
     // 警告したうえで分岐メモ(CSVの分岐ルート)に使われないようラベルをクリアする。
-    private static void NormalizeYesNoLabelPairs(FlowChart chart, List<string> warnings)
+    private static void NormalizeYesNoLabelPairs(
+        FlowChart chart, List<string> warnings, HashSet<string> diamondsWithExcludedBranch)
     {
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
 
@@ -406,14 +428,22 @@ public class ExcelImportService
             }
 
             var found = presentLabels[0];
-            var foundName = found == "Y" ? "YES" : "NO";
-            var missingName = found == "Y" ? "NO" : "YES";
-            warnings.Add(
-                $"[YES/NO不整合] {WarningFormatting.DescribeNode(diamond)} は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+
+            // 反対側の矢印は、開始/終了ノード無し除外(8.)によってその行き先ごと既に除外されている場合、
+            // 別途[開始/終了ノード無し]で理由を警告済みのため、ここでは紛らわしい重複警告を出さない
+            // (ラベルをクリアして分岐メモに使わないようにする点は他のケースと同じ)。
+            if (!diamondsWithExcludedBranch.Contains(diamond.Id))
+            {
+                var foundName = found == "Y" ? "YES" : "NO";
+                var missingName = found == "Y" ? "NO" : "YES";
+                warnings.Add(
+                    $"[YES/NO不整合] {WarningFormatting.DescribeNode(diamond)} は {foundName} の矢印しかなく、{missingName} に対応する矢印がありません。分岐メモにはこの分岐のラベルを使用しません。");
+            }
 
             foreach (var edge in group.Where(e => e.Label == found))
             {
                 edge.Label = null;
+                edge.LabelText = null;
             }
         }
     }
