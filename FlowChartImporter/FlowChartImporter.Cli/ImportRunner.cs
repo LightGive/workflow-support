@@ -46,7 +46,8 @@ internal static class ImportRunner
         int minRow,
         string? ignoreActor,
         string? jsonOutputPath,
-        string? csvOutputPath)
+        string? csvOutputPath,
+        bool debugLabels = false)
     {
         string? sheetName = sheetNameOverride;
         try
@@ -62,7 +63,7 @@ internal static class ImportRunner
             }
 
             var service = new ExcelImportService(settings);
-            var result = service.Import(filePath, sheetName, minRow, ignoreActor);
+            var result = service.Import(filePath, sheetName, minRow, ignoreActor, debugLabels);
 
             foreach (var warning in result.Warnings)
             {

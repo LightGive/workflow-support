@@ -28,7 +28,12 @@ public class ExcelImportService
     /// 一番左(A列)の実施主体名がこの文字列と一致する行のシェイプ・テキストを無視する。
     /// nullまたは空文字の場合は何も無視しない。
     /// </param>
-    public ImportResult Import(string filePath, string sheetName, int minRow = 1, string? ignoreActor = null)
+    /// <param name="debugLabels">
+    /// trueの場合、分岐(ひし形)のYES/NOラベル判定の詳細(候補・矢印ごとの距離・最終結果)を
+    /// [YES/NOデバッグ] としてWarningsに追加する(--debug-labelsオプション用)。
+    /// </param>
+    public ImportResult Import(
+        string filePath, string sheetName, int minRow = 1, string? ignoreActor = null, bool debugLabels = false)
     {
         using var doc = SpreadsheetDocument.Open(filePath, isEditable: false);
         var workbookPart = doc.WorkbookPart
@@ -72,7 +77,7 @@ public class ExcelImportService
             selectValue: s => s.Text.Trim(), addValue: (node, text) => node.Remarks.Add(text));
 
         // 6. コネクタをエッジに変換
-        ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes);
+        ResolveEdges(chart, connectors, nodeShapes, xmlIdToNodeId, nodeMap, yesNoTextBoxes, allWarnings, debugLabels);
 
         // 7. 矢印で他のノードと接続されていない孤立したシェイプは、
         // 業務フローとして意味を持たないため出力対象(JSON/CSV)から除外する。
@@ -219,7 +224,9 @@ public class ExcelImportService
         List<Internal.ShapeInfo> nodeShapes,
         Dictionary<uint, string> xmlIdToNodeId,
         List<(Internal.ShapeInfo Shape, FlowNode Node)> nodeMap,
-        List<Internal.ShapeInfo> yesNoTextBoxes)
+        List<Internal.ShapeInfo> yesNoTextBoxes,
+        List<string> allWarnings,
+        bool debugLabels)
     {
         // 点線の矢印はデータのやり取りを表すものであり、業務フローの流れとしては扱わない
         // (孤立ノード判定・開始/終了到達判定・分岐ラベル判定・CSV出力の対象外)。
@@ -233,7 +240,7 @@ public class ExcelImportService
         // 矢印自体にテキストが無い分岐について、近くのYES/NOテキストボックスからラベルを補う
         var nodeShapeById = nodeMap.ToDictionary(t => t.Node.Id, t => t.Shape);
         BranchLabelResolver.ResolveMissingLabels(
-            connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints);
+            connections, nodeShapeById, yesNoTextBoxes, _settings.BranchLabelSearchRadiusPoints, allWarnings, debugLabels);
 
         // DB(データストア)シェイプに繋がる矢印は、線種が実線でもデータのやり取りを表すとみなし、
         // 点線の矢印と同様に業務フローのエッジ(Edges)ではなくDataEdgesとして扱う。

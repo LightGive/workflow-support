@@ -31,6 +31,8 @@ const string UsageText = """
                          一番左(A列)の実施主体名がこれと一致する行のシェイプ・テキストを無視する
                          (省略時: 無視しない)
       --list-sheets      指定ファイルのシート一覧を表示して終了(フォルダは指定不可)
+      --debug-labels     分岐(ひし形)のYES/NOラベル判定の詳細([YES/NOデバッグ])を警告として出力する
+                         (見つかった候補・矢印ごとの距離・最終的な割り当て結果。通常は出力しない)
       --help             このヘルプを表示して終了
 
     設定ファイル (settings.json) の形式:
@@ -79,6 +81,7 @@ string? ignoreActor = null;
 bool listSheets = false;
 bool noJson = false;
 bool noCsv = false;
+bool debugLabels = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -117,6 +120,9 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--list-sheets":
             listSheets = true;
+            break;
+        case "--debug-labels":
+            debugLabels = true;
             break;
         default:
             if (path == null)
@@ -226,7 +232,7 @@ int RunBatch(string folderPath)
         var jsonOut = writeJson ? Path.Combine(exportDir, baseName + ".json") : null;
         var csvOut = writeCsv ? Path.Combine(exportDir, baseName + ".csv") : null;
 
-        outcomes.Add(ImportRunner.ImportFile(file, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut));
+        outcomes.Add(ImportRunner.ImportFile(file, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut, debugLabels));
     }
 
     var resolvedSummaryPath = summaryPath ?? Path.Combine(folderPath, "export", "summary.txt");
@@ -248,7 +254,7 @@ int RunSingleFile(string filePath)
     var jsonOut = writeJson ? outputPath ?? Path.Combine(exportDir, baseName + ".json") : null;
     var csvOut = writeCsv ? csvPath ?? Path.Combine(exportDir, baseName + ".csv") : null;
 
-    var outcome = ImportRunner.ImportFile(filePath, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut);
+    var outcome = ImportRunner.ImportFile(filePath, sheetName, settings, minRow, ignoreActor, jsonOut, csvOut, debugLabels);
 
     switch (outcome.Status)
     {

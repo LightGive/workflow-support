@@ -17,11 +17,21 @@ namespace FlowChartImporter.Core.Importing;
 /// </summary>
 internal static class BranchLabelResolver
 {
+    /// <param name="warnings">
+    /// 警告の追加先。矢印の起点が近接していて自動入れ替えが発生した場合に
+    /// [YES/NO自動入れ替え] を追加する。debugLabelsがtrueの場合は判定の詳細も [YES/NOデバッグ] として追加する。
+    /// </param>
+    /// <param name="debugLabels">
+    /// trueの場合、各分岐について見つかったYES/NOラベル候補・矢印ごとの距離・最終的な割り当て結果を
+    /// [YES/NOデバッグ] としてwarningsに追加する(--debug-labelsオプション用)。
+    /// </param>
     public static void ResolveMissingLabels(
         List<ResolvedConnection> connections,
         IReadOnlyDictionary<string, ShapeInfo> nodeShapeById,
         IReadOnlyList<ShapeInfo> yesNoTextBoxes,
-        double searchRadiusPoints)
+        double searchRadiusPoints,
+        List<string> warnings,
+        bool debugLabels = false)
     {
         if (yesNoTextBoxes.Count == 0)
         {
@@ -53,9 +63,19 @@ internal static class BranchLabelResolver
         foreach (var group in indexedByFromNode)
         {
             var diamond = nodeShapeById[group.Key];
+            string DescribeDiamond() =>
+                $"'{WarningFormatting.Truncate(diamond.Text)}' (行{diamond.AnchorFromRow + 1}, 列{diamond.AnchorFromCol + 1})";
+            string DescribeTarget(string toNodeId) =>
+                nodeShapeById.TryGetValue(toNodeId, out var target) ? $"'{WarningFormatting.Truncate(target.Text)}'" : "(不明)";
+            string ValueName(string v) => v == "Y" ? "YES" : "NO";
 
             if (!textBoxesByOwnerDiamond.TryGetValue(diamond, out var ownTextBoxes))
             {
+                if (debugLabels && group.Any(t => t.connection.Label == null))
+                {
+                    warnings.Add(
+                        $"[YES/NOデバッグ] {DescribeDiamond()}: 検索範囲(branchLabelSearchRadiusPoints)内にYES/NOラベル候補が見つかりませんでした。");
+                }
                 continue;
             }
 
@@ -63,6 +83,13 @@ internal static class BranchLabelResolver
                 .Select(tb => (Label: MatchYesNo(tb.Text), Text: tb.Text, tb.CenterX, tb.CenterY))
                 .Where(t => t.Label != null)
                 .ToList();
+
+            if (debugLabels)
+            {
+                foreach (var candidate in candidateLabels)
+                    warnings.Add(
+                        $"[YES/NOデバッグ] {DescribeDiamond()}: 候補テキスト '{WarningFormatting.Truncate(candidate.Text)}' → {ValueName(candidate.Label!)} と判定");
+            }
 
             if (candidateLabels.Count == 0)
             {
@@ -101,6 +128,16 @@ internal static class BranchLabelResolver
                 u => u.index,
                 u => distanceByValue[u.index].OrderBy(kv => kv.Value).First().Key);
 
+            if (debugLabels)
+            {
+                foreach (var u in unlabeled)
+                {
+                    var dists = string.Join(", ", distanceByValue[u.index].Select(kv => $"{ValueName(kv.Key)}={kv.Value:F1}pt"));
+                    warnings.Add(
+                        $"[YES/NOデバッグ] {DescribeDiamond()} → {DescribeTarget(u.connection.ToNodeId)}: {dists} → 初期選択={ValueName(assigned[u.index])}");
+                }
+            }
+
             // 選ばれなかった値がある場合、距離の比が最も1に近い矢印を1本入れ替える(移動元が1本しか
             // ない場合は入れ替えると空になるだけなのでスキップ)。
             if (distinctValues.Count == 2)
@@ -118,7 +155,20 @@ internal static class BranchLabelResolver
                         .OrderBy(i => distanceByValue[i][missingValue] / distanceByValue[i][otherValue])
                         .First();
                     assigned[swapIndex] = missingValue;
+
+                    // 矢印の起点が近接していたため全ての矢印が同じ値を独立に選んでしまい、
+                    // 1本を自動的に反対の値へ入れ替えた。誤判定の可能性があるため必ず警告する。
+                    warnings.Add(
+                        $"[YES/NO自動入れ替え] {DescribeDiamond()} から {DescribeTarget(connections[swapIndex].ToNodeId)} への矢印を、"
+                        + $"矢印の起点が近接していたため {ValueName(otherValue)} から {ValueName(missingValue)} に自動修正しました。分岐からの矢印の配置をご確認ください。");
                 }
+            }
+
+            if (debugLabels)
+            {
+                foreach (var (index, label) in assigned)
+                    warnings.Add(
+                        $"[YES/NOデバッグ] {DescribeDiamond()} 最終結果: → {DescribeTarget(connections[index].ToNodeId)} = {ValueName(label)}");
             }
 
             foreach (var (index, label) in assigned)
