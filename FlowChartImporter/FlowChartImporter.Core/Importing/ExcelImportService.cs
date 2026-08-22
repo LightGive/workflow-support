@@ -303,6 +303,31 @@ public class ExcelImportService
     /// </returns>
     private static HashSet<string> ExcludeNodesOffStartToEndPath(FlowChart chart, List<string> allWarnings)
     {
+        var (successors, predecessors, inDegree, outDegree) = BuildAdjacency(chart);
+        var idsToExclude = DetermineNodesOffStartToEndPath(chart, successors, predecessors, inDegree, outDegree, allWarnings);
+
+        if (idsToExclude.Count == 0)
+        {
+            return [];
+        }
+
+        var diamondsWithExcludedBranch = FindDiamondsWithExcludedBranch(chart, idsToExclude);
+
+        chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
+        chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+        chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
+
+        return diamondsWithExcludedBranch;
+    }
+
+    /// <summary>chart.Edgesから、ノードごとの後続・先行ノード一覧と入次数・出次数を求める。</summary>
+    private static (
+        Dictionary<string, List<string>> Successors,
+        Dictionary<string, List<string>> Predecessors,
+        Dictionary<string, int> InDegree,
+        Dictionary<string, int> OutDegree
+        ) BuildAdjacency(FlowChart chart)
+    {
         var successors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var predecessors = chart.Nodes.ToDictionary(n => n.Id, _ => new List<string>());
         var inDegree = chart.Nodes.ToDictionary(n => n.Id, _ => 0);
@@ -326,7 +351,21 @@ public class ExcelImportService
                 inDegree[edge.ToNodeId]++;
             }
         }
+        return (successors, predecessors, inDegree, outDegree);
+    }
 
+    /// <summary>
+    /// 開始ノードから矢印を辿って到達できないか、終了ノードへ矢印を辿って到達できないノードを求め、
+    /// 警告したうえでそのIDを返す(実際の除外は呼び出し側で行う)。
+    /// </summary>
+    private static HashSet<string> DetermineNodesOffStartToEndPath(
+        FlowChart chart,
+        Dictionary<string, List<string>> successors,
+        Dictionary<string, List<string>> predecessors,
+        Dictionary<string, int> inDegree,
+        Dictionary<string, int> outDegree,
+        List<string> allWarnings)
+    {
         var startIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && inDegree[n.Id] == 0).Select(n => n.Id);
         var endIds = chart.Nodes.Where(n => n.ShapeType == ShapeType.Ellipse && outDegree[n.Id] == 0).Select(n => n.Id);
 
@@ -362,26 +401,22 @@ public class ExcelImportService
             idsToExclude.Add(node.Id);
         }
 
-        if (idsToExclude.Count == 0)
-        {
-            return [];
-        }
+        return idsToExclude;
+    }
 
-        // 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
-        // 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
-        // 分岐自身は除外されない(=nodeByIdにまだ残っている)ケースだけを記録しておく。
+    /// <summary>
+    /// 分岐(ひし形)から出る矢印の行き先だけが除外される場合、その分岐は結果的にYES/NOの
+    /// 片方しか残らなくなる。これは矢印のラベル判定自体の誤りではなく、この除外が原因のため、
+    /// 分岐自身は除外されない(=idsToExcludeに含まれない)ケースだけを求める。
+    /// </summary>
+    private static HashSet<string> FindDiamondsWithExcludedBranch(FlowChart chart, HashSet<string> idsToExclude)
+    {
         var nodeById = chart.Nodes.ToDictionary(n => n.Id);
-        var diamondsWithExcludedBranch = chart.Edges
+        return chart.Edges
             .Where(e => idsToExclude.Contains(e.ToNodeId) && !idsToExclude.Contains(e.FromNodeId)
                         && nodeById.TryGetValue(e.FromNodeId, out var fromNode) && fromNode.ShapeType == ShapeType.Diamond)
             .Select(e => e.FromNodeId)
             .ToHashSet();
-
-        chart.Nodes.RemoveAll(n => idsToExclude.Contains(n.Id));
-        chart.Edges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
-        chart.DataEdges.RemoveAll(e => idsToExclude.Contains(e.FromNodeId) || idsToExclude.Contains(e.ToNodeId));
-
-        return diamondsWithExcludedBranch;
     }
 
     private static HashSet<string> BfsMultiSource(

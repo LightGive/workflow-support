@@ -24,12 +24,15 @@ internal class ActorDetector
         var mergeEndByStartRow = BuildMergeMap(worksheet);
         var result = new List<ActorRange>();
 
+        // 直前に追加した範囲の終了行(0始まり)。行は昇順に処理するため、この行までは
+        // 結合セルの続きとみなしてスキップすればよい(全範囲を線形探索する必要は無い)。
+        int skipUntilRow = -1;
+
         foreach (var row in sheetData.Elements<Row>().OrderBy(r => r.RowIndex?.Value ?? 0))
         {
             int rowIndex = (int)(row.RowIndex?.Value ?? 0) - 1; // 0始まり
 
-            // 既に追加済みの範囲に含まれる行はスキップ
-            if (result.Any(r => r.StartRow <= rowIndex && rowIndex <= r.EndRow))
+            if (rowIndex <= skipUntilRow)
             {
                 continue;
             }
@@ -51,6 +54,7 @@ internal class ActorDetector
                 : rowIndex;
 
             result.Add(new ActorRange(value, rowIndex, endRow));
+            skipUntilRow = Math.Max(skipUntilRow, endRow);
         }
 
         return [.. result.OrderBy(r => r.StartRow)];
